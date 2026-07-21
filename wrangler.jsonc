@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "propel-web",
+  "name": "viooh-propel-autopilot",
   "main": "worker/index.ts",
   "compatibility_date": "2026-07-21",
   "assets": {

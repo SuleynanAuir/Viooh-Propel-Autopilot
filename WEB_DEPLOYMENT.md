@@ -16,8 +16,8 @@
 ### 方式一：Docker
 
 ```bash
-docker build -t propel-web .
-docker run --rm -p 8080:8080 propel-web
+docker build -t viooh-propel-autopilot .
+docker run --rm -p 8080:8080 viooh-propel-autopilot
 ```
 
 浏览器打开 `http://localhost:8080`。
@@ -40,6 +40,29 @@ npm run deploy
 ```
 
 `wrangler deploy` 会构建 `linux/amd64` Container 镜像、上传静态资源并部署 Worker。部署完成后 Wrangler 会输出公网地址。绑定自定义域名时，在 Cloudflare 控制台为这个 Worker 添加 Custom Domain 即可。
+
+### Workers Builds 连接 GitHub
+
+如果使用 Cloudflare 控制台连接 GitHub 仓库自动构建，Worker 名称必须与 `wrangler.jsonc` 里的 `name` 保持一致。本仓库当前使用：
+
+```text
+viooh-propel-autopilot
+```
+
+构建日志中如果仍然出现 `config file is using the Worker name "propel-web"`，说明 Cloudflare 正在构建旧提交；把包含 `wrangler.jsonc` 修改的提交推送到 GitHub 后重新部署。
+
+如果 Maven 与 Docker 镜像都已经 `BUILD SUCCESS`，最后失败为：
+
+```text
+✘ [ERROR] Unauthorized
+```
+
+这表示部署步骤的 Cloudflare 身份没有足够权限，通常不是代码编译错误。处理方式：
+
+1. 在 Cloudflare 控制台确认当前 Worker 属于正确账号，并且账号已启用 Workers/Containers 所需计划。
+2. 如果使用 Workers Builds，重新连接 GitHub 仓库或更新该项目的部署授权，确保构建服务有部署 Worker、上传静态资源和发布 Container 镜像的权限。
+3. 如果改用本机或 CI 部署，使用有权限的账号执行 `npx wrangler login`，或配置 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID` 后运行 `npm run deploy`。
+4. 权限更新后重新触发部署；不需要改 Java 代码，日志里的 `mvn -DskipTests package` 已经通过。
 
 ## 重要的上传限制
 
