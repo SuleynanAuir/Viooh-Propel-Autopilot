@@ -41,7 +41,7 @@ npm run deploy
 
 `wrangler deploy` 会构建 `linux/amd64` Container 镜像、上传静态资源并部署 Worker。部署完成后 Wrangler 会输出公网地址。绑定自定义域名时，在 Cloudflare 控制台为这个 Worker 添加 Custom Domain 即可。
 
-Cloudflare 控制台如果显示正在执行 `npm run build`，说明当前项目走的是 Pages/普通构建流程；这个流程只能构建静态资源，不能发布本项目依赖的 Java Container 后端。`npm run build` 在本仓库中只做 TypeScript 校验，真正部署仍必须使用 `npm run deploy` 或把 Workers Builds 的部署命令设置为：
+Cloudflare 控制台如果显示正在执行 `npm run build`，说明当前项目走的是 Pages/普通构建流程；这个流程只能构建静态资源，不能发布本项目依赖的 Java Container 后端。`npm run build` 会把前端文件复制到 `dist/`，用于满足 Pages 的输出目录检查；完整工具部署仍必须使用 `npm run deploy` 或把 Workers Builds 的部署命令设置为：
 
 ```bash
 npx wrangler deploy
