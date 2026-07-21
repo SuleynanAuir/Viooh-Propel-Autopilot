@@ -201,6 +201,20 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(73, 53, 111, .1); }
 .field input:invalid:not(:placeholder-shown) { border-color: var(--danger); }
 .field textarea { resize: vertical; line-height: 1.5; }
+.field small { color: var(--muted); font-size: 11px; line-height: 1.5; }
+
+.save-target { align-items: flex-start; }
+.secondary-button {
+  border: 1px solid #cfd9d6;
+  border-radius: 11px;
+  padding: 11px 14px;
+  color: var(--ink);
+  background: #fbfdfc;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.secondary-button:hover { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(73, 53, 111, .08); }
 
 .option-panel { margin-top: 18px; border-top: 1px solid var(--line); }
 .option-panel summary { padding: 18px 2px 0; display: flex; justify-content: space-between; align-items: center; gap: 14px; cursor: pointer; list-style: none; }

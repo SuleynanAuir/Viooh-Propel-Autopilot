@@ -17,9 +17,13 @@ const sourceCurrency = document.querySelector('#source-currency');
 const targetCurrency = document.querySelector('#target-currency');
 const exchangeRate = document.querySelector('#exchange-rate');
 const exchangeRateField = document.querySelector('#exchange-rate-field');
+const outputName = document.querySelector('#output-name');
+const chooseSaveLocation = document.querySelector('#choose-save-location');
+const saveLocationSummary = document.querySelector('#save-location-summary');
 
 let selectedFiles = [];
 let maxUploadBytes = Infinity;
+let saveFileHandle = null;
 
 function fileKey(file) {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -104,6 +108,63 @@ function syncExchangeRateRequirement() {
   }
 }
 
+function normalizedOutputName() {
+  const raw = outputName.value.trim() || 'viooh-propel-autopilot.xlsx';
+  return raw.toLowerCase().endsWith('.xlsx') ? raw : `${raw}.xlsx`;
+}
+
+async function chooseSaveFile() {
+  if (!('showSaveFilePicker' in window)) {
+    saveFileHandle = null;
+    saveLocationSummary.textContent = 'This browser cannot choose a save folder. The file will be saved through the default download flow.';
+    return;
+  }
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: normalizedOutputName(),
+      types: [
+        {
+          description: 'Excel workbook',
+          accept: {
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+          },
+        },
+      ],
+    });
+    saveFileHandle = handle;
+    outputName.value = handle.name;
+    saveLocationSummary.textContent = `Selected: ${handle.name}. The browser has stored the folder permission for this export.`;
+  } catch (error) {
+    if (error && error.name !== 'AbortError') {
+      saveFileHandle = null;
+      saveLocationSummary.textContent = 'Could not select a save location. The default download flow will be used.';
+    }
+  }
+}
+
+async function saveWorkbookBlob(blob, fallbackName) {
+  if (saveFileHandle) {
+    try {
+      const writable = await saveFileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return 'picked-location';
+    } catch {
+      saveFileHandle = null;
+      saveLocationSummary.textContent = 'Could not write to the selected location. The file was downloaded instead.';
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fallbackName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  return 'download';
+}
+
 inputPicker.addEventListener('change', () => {
   addFiles(inputPicker.files);
   inputPicker.value = '';
@@ -125,6 +186,13 @@ dropZone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
 
 sourceCurrency.addEventListener('change', syncExchangeRateRequirement);
 targetCurrency.addEventListener('change', syncExchangeRateRequirement);
+chooseSaveLocation.addEventListener('click', chooseSaveFile);
+outputName.addEventListener('input', () => {
+  if (saveFileHandle && outputName.value.trim() !== saveFileHandle.name) {
+    saveFileHandle = null;
+    saveLocationSummary.textContent = 'File name changed. Choose a save location again if you want to save outside the default download folder.';
+  }
+});
 
 for (const radio of document.querySelectorAll('input[name="photographyMode"]')) {
   radio.addEventListener('change', () => {
@@ -174,6 +242,7 @@ form.addEventListener('submit', event => {
   const body = new FormData(form);
   body.delete('inputFiles');
   for (const file of selectedFiles) body.append('inputFiles', file, file.name);
+  body.set('outputName', normalizedOutputName());
   body.set('sourceCurrency', sourceCurrency.value);
   body.set('targetCurrency', targetCurrency.value);
   body.set('exchangeRate', sourceCurrency.value === targetCurrency.value ? '1' : exchangeRate.value);
@@ -200,19 +269,13 @@ form.addEventListener('submit', event => {
   xhr.addEventListener('load', async () => {
     if (xhr.status >= 200 && xhr.status < 300) {
       const name = responseFileName(xhr.getResponseHeader('Content-Disposition')) || 'viooh-propel-autopilot.xlsx';
-      const url = URL.createObjectURL(xhr.response);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = name;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      const saveMode = await saveWorkbookBlob(xhr.response, name);
       const merged = xhr.getResponseHeader('X-Propel-Merged-Rows');
       const filtered = xhr.getResponseHeader('X-Propel-Filtered-Rows');
       setBusy(false, 'success');
       statusTitle.textContent = 'Excel workbook generated';
-      statusDetail.textContent = merged ? `Merged ${merged} rows. FilteredFrames keeps ${filtered} rows.` : 'You can adjust settings and export again.';
+      const saveText = saveMode === 'picked-location' ? 'Saved to the selected location.' : 'Saved through the browser download flow.';
+      statusDetail.textContent = merged ? `${saveText} Merged ${merged} rows. FilteredFrames keeps ${filtered} rows.` : saveText;
       return;
     }
     let message = `Request failed (${xhr.status})`;
