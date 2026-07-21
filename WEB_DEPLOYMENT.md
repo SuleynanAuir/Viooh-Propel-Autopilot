@@ -57,12 +57,26 @@ viooh-propel-autopilot
 ✘ [ERROR] Unauthorized
 ```
 
-这表示部署步骤的 Cloudflare 身份没有足够权限，通常不是代码编译错误。处理方式：
+这表示部署步骤的 Cloudflare 身份没有足够权限，通常不是代码编译错误。当前日志已经显示 `mvn -DskipTests package` 和 Container 镜像构建都成功，失败发生在 Wrangler 把 Container/Worker 发布到 Cloudflare 时。
 
-1. 在 Cloudflare 控制台确认当前 Worker 属于正确账号，并且账号已启用 Workers/Containers 所需计划。
-2. 如果使用 Workers Builds，重新连接 GitHub 仓库或更新该项目的部署授权，确保构建服务有部署 Worker、上传静态资源和发布 Container 镜像的权限。
-3. 如果改用本机或 CI 部署，使用有权限的账号执行 `npx wrangler login`，或配置 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID` 后运行 `npm run deploy`。
-4. 权限更新后重新触发部署；不需要改 Java 代码，日志里的 `mvn -DskipTests package` 已经通过。
+Workers Builds 连接 GitHub 时，建议不要只依赖默认授权；为这个项目配置一个自定义 Cloudflare API token，并确保 token 至少包含：
+
+| Scope | Permission |
+| --- | --- |
+| Account | `Workers Scripts:Edit` |
+| Account | `Containers:Edit` |
+| Account | `Account Settings:Read` |
+| User | `User Details:Read` |
+
+如果项目绑定了自定义域名或路由，还需要对应 zone 的 `Workers Routes:Edit` 权限。然后在 Cloudflare Workers Builds 项目设置里把部署 token 更新为这个自定义 token，重新触发部署。
+
+如果改用本机或其他 CI 部署，使用同一个有权限的 token：
+
+```bash
+export CLOUDFLARE_ACCOUNT_ID=你的账号ID
+export CLOUDFLARE_API_TOKEN=你的API_TOKEN
+npm run deploy
+```
 
 ## 重要的上传限制
 
