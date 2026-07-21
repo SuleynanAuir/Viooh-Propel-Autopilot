@@ -25,6 +25,7 @@ let selectedFiles = [];
 let maxUploadBytes = Infinity;
 let saveFileHandle = null;
 let exportServiceAvailable = false;
+let exportInProgress = false;
 
 function fileKey(file) {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -207,7 +208,9 @@ async function loadServerCapabilities() {
     if (!response.ok) throw new Error('health check failed');
     const health = await response.json();
     exportServiceAvailable = true;
+    exportInProgress = false;
     submitButton.disabled = false;
+    progressWrap.hidden = true;
     maxUploadBytes = health.maxUploadBytes;
     maxUploadLabel.textContent = `Limit ${formatBytes(maxUploadBytes)} per request`;
     const help = document.querySelector('#remote-images-help');
@@ -216,7 +219,13 @@ async function loadServerCapabilities() {
       : 'This deployment has disabled external image fetching. Ask the deployment owner to enable it.';
   } catch {
     exportServiceAvailable = false;
+    exportInProgress = false;
     submitButton.disabled = true;
+    progressWrap.hidden = true;
+    progressBar.classList.remove('indeterminate');
+    progressBar.style.width = '0';
+    progressText.textContent = 'Unavailable';
+    document.querySelector('.button-label').textContent = 'Service unavailable';
     maxUploadLabel.textContent = 'Service unavailable';
     statusTitle.textContent = 'Export service is unavailable';
     statusDetail.textContent = 'The page is not connected to the Java export backend. Deploy with Cloudflare Workers + Containers, not static Pages only.';
@@ -306,9 +315,12 @@ form.addEventListener('submit', event => {
 });
 
 function setBusy(busy, outcome) {
-  submitButton.disabled = busy;
+  exportInProgress = busy;
+  submitButton.disabled = busy || !exportServiceAvailable;
   progressWrap.hidden = !busy;
-  document.querySelector('.button-label').textContent = busy ? 'Processing...' : 'Generate Excel';
+  document.querySelector('.button-label').textContent = exportServiceAvailable
+    ? (busy ? 'Processing...' : 'Generate Excel')
+    : 'Service unavailable';
   if (busy) {
     statusTitle.textContent = 'Uploading files';
     statusDetail.textContent = 'Keep this page open while the export runs.';

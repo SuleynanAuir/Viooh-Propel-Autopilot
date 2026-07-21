@@ -279,7 +279,7 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .submit-copy span { color: #aebbb8; font-size: 11px; }
 #submit-button { min-width: 215px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border: 0; border-radius: 11px; color: var(--ink); background: var(--lime); font-size: 13px; font-weight: 800; cursor: pointer; transition: background .15s, transform .15s; }
 #submit-button:hover { background: var(--lime-deep); transform: translateY(-1px); }
-#submit-button:disabled { cursor: wait; opacity: .65; transform: none; }
+#submit-button:disabled { cursor: not-allowed; opacity: .5; transform: none; filter: grayscale(.35); }
 #submit-button svg { width: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .progress-wrap { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
 .progress-track { height: 5px; overflow: hidden; border-radius: 999px; background: #3b474b; }
