@@ -1,4 +1,4 @@
-# Propel Web 部署说明
+# viooh-propel-autopilot Web 部署说明
 
 这个版本把桌面操作改成了一个单页 Web 工具，同时继续使用原有 Java 合并、预算分配和 Apache POI Excel 生成逻辑。
 
@@ -29,7 +29,23 @@ mvn -DskipTests package
 java -cp target/Auto_project-1.0-SNAPSHOT.jar com.autoproject.web.WebMain
 ```
 
-## Cloudflare 部署
+## Cloudflare 部署：必须使用 Workers + Containers
+
+这个项目不是纯静态 Pages 应用。前端只是操作界面，真正的导出仍然是原 `propel` Java 流程：
+
+```text
+browser -> Worker /api/* -> Cloudflare Container -> Java WebMain -> DataMerger / Proposal / PICS / ExcelGenerator
+```
+
+因此如果只部署到 Cloudflare Pages，页面可以打开，但 `/api/health` 不会连接到 Java Container，`POST /api/export` 会被静态层拒绝，常见表现是：
+
+```text
+Service unavailable
+Workbook generation failed
+Request failed (405)
+```
+
+这不是 Excel 生成失败，而是原 Java 后端根本没有运行。
 
 前提：Workers Paid 计划、Node.js/npm、Docker Desktop，以及已经登录 Wrangler。
 
@@ -41,7 +57,7 @@ npm run deploy
 
 `wrangler deploy` 会构建 `linux/amd64` Container 镜像、上传静态资源并部署 Worker。部署完成后 Wrangler 会输出公网地址。绑定自定义域名时，在 Cloudflare 控制台为这个 Worker 添加 Custom Domain 即可。
 
-Cloudflare 控制台如果显示正在执行 `npm run build`，说明当前项目走的是 Pages/普通构建流程；这个流程只能构建静态资源，不能发布本项目依赖的 Java Container 后端。`npm run build` 会把前端文件复制到 `dist/`，用于满足 Pages 的输出目录检查；完整工具部署仍必须使用 `npm run deploy` 或把 Workers Builds 的部署命令设置为：
+Cloudflare 控制台如果显示正在执行 `npm run build` 并要求 `dist` 输出目录，说明当前项目走的是 Pages/普通构建流程；这个流程只能构建静态资源，不能发布本项目依赖的 Java Container 后端。`npm run build` 会把前端文件复制到 `dist/`，只能用于静态资源检查；完整工具部署仍必须使用 `npm run deploy` 或把 Workers Builds 的部署命令设置为：
 
 ```bash
 npx wrangler deploy
@@ -101,9 +117,10 @@ Java 服务自身默认接受 250 MiB，可通过 `PROPEL_MAX_UPLOAD_BYTES` 调�
 | `PORT` | `8080` | Container HTTP 端口 |
 | `PROPEL_MAX_UPLOAD_BYTES` | `262144000` | multipart 请求最大字节数 |
 | `PROPEL_MAX_CONCURRENT_EXPORTS` | `1` | 单 Container 同时生成的工作簿数量 |
-| `PROPEL_ALLOW_REMOTE_IMAGES` | `false` | 是否允许从 `FRAMEIMAGEPATH` URL 下载图片 |
+| `PROPEL_ALLOW_REMOTE_IMAGES` | `true` | 是否允许从 supply matrix Pictures 链接下载 PICS 图片 |
+| `PROPEL_SUPPLY_MATRIX_PATH` | `feishu/supply_matrix.xlsx` | supply matrix 文件路径 |
 
-公网部署应保持 `PROPEL_ALLOW_REMOTE_IMAGES=false`。如果确实要开启，只应处理可信输入，并在后续增加域名白名单；否则远程 URL 会带来 SSRF 风险。用户仍可通过页面上传本地 PICS 文件夹。
+公网部署当前为了 PICS 功能默认开启外部图片抓取。只应处理可信输入，并在后续增加域名白名单；否则远程 URL 会带来 SSRF 风险。
 
 ## 健康检查
 

@@ -24,6 +24,7 @@ const saveLocationSummary = document.querySelector('#save-location-summary');
 let selectedFiles = [];
 let maxUploadBytes = Infinity;
 let saveFileHandle = null;
+let exportServiceAvailable = false;
 
 function fileKey(file) {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -205,6 +206,8 @@ async function loadServerCapabilities() {
     const response = await fetch('/api/health', { cache: 'no-store' });
     if (!response.ok) throw new Error('health check failed');
     const health = await response.json();
+    exportServiceAvailable = true;
+    submitButton.disabled = false;
     maxUploadBytes = health.maxUploadBytes;
     maxUploadLabel.textContent = `Limit ${formatBytes(maxUploadBytes)} per request`;
     const help = document.querySelector('#remote-images-help');
@@ -212,9 +215,11 @@ async function loadServerCapabilities() {
       ? 'The backend matches Proposal Country, MARKET, and Venue type tokens against feishu/supply_matrix.xlsx, downloads Pictures links into meta, and inserts them into PICS.'
       : 'This deployment has disabled external image fetching. Ask the deployment owner to enable it.';
   } catch {
+    exportServiceAvailable = false;
+    submitButton.disabled = true;
     maxUploadLabel.textContent = 'Service unavailable';
     statusTitle.textContent = 'Export service is unavailable';
-    statusDetail.textContent = 'Refresh the page or contact the deployment owner.';
+    statusDetail.textContent = 'The page is not connected to the Java export backend. Deploy with Cloudflare Workers + Containers, not static Pages only.';
   }
 }
 
@@ -222,6 +227,11 @@ form.addEventListener('submit', event => {
   event.preventDefault();
   fileError.textContent = '';
   syncExchangeRateRequirement();
+  if (!exportServiceAvailable) {
+    statusTitle.textContent = 'Export service is unavailable';
+    statusDetail.textContent = 'Cannot run the original Propel export flow until /api/health is served by the Java backend.';
+    return;
+  }
   if (!form.reportValidity()) return;
   if (selectedFiles.length === 0) {
     fileError.textContent = 'Select at least one frame list file.';
