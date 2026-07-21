@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "propel-web",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-07-21",
+  "assets": {
+    "directory": "./src/main/resources/web",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "containers": [
+    {
+      "class_name": "PropelContainer",
+      "image": "./Dockerfile",
+      "instance_type": "standard-1",
+      "max_instances": 2
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PROPEL_CONTAINER",
+        "class_name": "PropelContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PropelContainer"]
+    }
+  ]
+}

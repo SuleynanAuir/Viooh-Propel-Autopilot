@@ -1,0 +1,17 @@
+.git
+.idea
+.vscode
+node_modules
+target
+dist
+dist 2
+*.dmg
+*.zip
+*.xlsx
+*.xls
+*.csv
+*.tsv
+*.docx
+*.log
+audit_log.txt
+propel_error.log

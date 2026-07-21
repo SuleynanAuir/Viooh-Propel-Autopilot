@@ -1,0 +1,37 @@
+{
+    "editor.largeFileOptimizations": true,
+    "workbench.editorLargeFileConfirmation": 20,
+    "files.watcherExclude": {
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/target/**": true,
+        "**/dist/**": true,
+        "**/dist 2/**": true
+    },
+    "search.exclude": {
+        "**/target": true,
+        "**/dist": true,
+        "**/dist 2": true,
+        "**/*.zip": true,
+        "**/*.dmg": true,
+        "Frames-details.csv": true
+    },
+    "java.import.exclusions": [
+        "**/node_modules/**",
+        "**/.metadata/**",
+        "**/archetype-resources/**",
+        "**/META-INF/maven/**",
+        "**/target/**",
+        "**/dist/**",
+        "**/dist 2/**",
+        "**/.git/**"
+    ],
+    "java.project.resourceFilters": [
+        "node_modules",
+        "\\.git",
+        "target",
+        "dist",
+        "dist 2"
+    ],
+    "java.jdt.ls.vmargs": "-XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -Dsun.zip.disableMemoryMapping=true -Xmx1G -Xms100m -Xlog:disable"
+}

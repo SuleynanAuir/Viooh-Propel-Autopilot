@@ -1,0 +1,23 @@
+.DS_Store
+.idea/
+.wrangler/
+node_modules/
+target/
+*.iml
+npm-debug.log*
+
+# Rebuildable desktop/package output
+/dist/
+/dist 2/
+/propel-*.zip
+/merged_output.xlsx
+
+# Local input data (test fixtures under src/test/resources remain tracked)
+/Frames-details.csv
+/VS CPM-JCD at-Frames.csv
+/all frames-JCD at.csv
+
+# Local runtime logs and Office lock files
+/audit_log.txt
+/propel_error.log
+/~$*
