@@ -30,7 +30,7 @@ final class WebExportService {
     ExportResult export(MultipartFormData.Form form, Path taskRoot) throws Exception {
         List<MultipartFormData.FilePart> inputParts = form.files("inputFiles");
         if (inputParts.isEmpty()) {
-            throw new IllegalArgumentException("请至少上传一个 frame list CSV、TSV 或 Excel 文件。");
+            throw new IllegalArgumentException("Upload at least one frame list CSV, TSV, or Excel file.");
         }
         List<String> inputPaths = new ArrayList<>();
         for (MultipartFormData.FilePart part : inputParts) {
@@ -40,23 +40,24 @@ final class WebExportService {
 
         int budget = positiveInteger(form.first("budget"), "Campaign budget");
         int campaignDays = optionalPositiveInteger(form.first("campaignDays"), 7, "Campaign days");
-        String location = trimToDefault(form.first("location"), "\\N");
-        boolean convertToUsd = booleanValue(form.first("convertBudgetToUsd"));
-        Map<String, Double> usdRates = parseRates(form.first("usdRates"));
-        if (convertToUsd && usdRates.isEmpty()) {
-            throw new IllegalArgumentException("启用 USD 换算后，请至少填写一个汇率，例如 EUR=1.08。");
-        }
+        String location = trimToDefault(form.first("location"), "");
+        String sourceCurrency = requiredCurrency(form.first("sourceCurrency"), "Original currency");
+        String targetCurrency = requiredCurrency(form.first("targetCurrency"), "Target currency");
+        double exchangeRate = exchangeRate(sourceCurrency, targetCurrency, form.first("exchangeRate"));
 
-        boolean fetchRemote = booleanValue(form.first("fetchPicsFromLinks"));
-        if (fetchRemote && !allowRemoteImages) {
-            throw new IllegalArgumentException("该部署未开启远程图片抓取；请上传本地 PICS 文件夹或联系管理员。");
-        }
-
-        Brief brief = new Brief(location, budget, campaignDays, convertToUsd, null, usdRates);
-        brief.setPicsFetchFromLinks(fetchRemote);
         if (!form.files("picsFiles").isEmpty()) {
-            brief.setLocalPicsRootPath(taskRoot.resolve("pics").toString());
+            throw new IllegalArgumentException("PICS images can only be fetched from FRAMEIMAGEPATH. Local PICS uploads are not supported.");
         }
+
+        if (!allowRemoteImages) {
+            throw new IllegalArgumentException("This deployment is not allowed to fetch FRAMEIMAGEPATH images.");
+        }
+
+        Brief brief = new Brief(location, budget, campaignDays, true, null, Map.of());
+        brief.setSourceCurrency(sourceCurrency);
+        brief.setTargetCurrency(targetCurrency);
+        brief.setCurrencyExchangeRate(exchangeRate);
+        brief.setPicsFetchFromLinks(true);
 
         List<FrameData> merged = new DataMerger().merge(inputPaths.toArray(String[]::new));
         applyPhotographyBudget(brief, merged, form.first("photographyMode"), form.first("photographyBudget"));
@@ -113,31 +114,57 @@ final class WebExportService {
             }
             int equals = item.indexOf('=');
             if (equals <= 0 || equals >= item.length() - 1) {
-                throw new IllegalArgumentException("汇率格式无效：" + item + "。请使用 EUR=1.08。");
+                throw new IllegalArgumentException("Invalid exchange rate format: " + item + ". Use EUR=1.08.");
             }
             String currency = item.substring(0, equals).trim().toUpperCase(Locale.ROOT);
             if (!currency.matches("[A-Z]{3}")) {
-                throw new IllegalArgumentException("币种代码必须是 3 个字母：" + currency);
+                throw new IllegalArgumentException("Currency code must be 3 letters: " + currency);
             }
             double rate;
             try {
                 rate = Double.parseDouble(item.substring(equals + 1).trim());
             } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("汇率必须是数字：" + item, e);
+                throw new IllegalArgumentException("Exchange rate must be a number: " + item, e);
             }
             if (!Double.isFinite(rate) || rate <= 0) {
-                throw new IllegalArgumentException("汇率必须大于 0：" + item);
+                throw new IllegalArgumentException("Exchange rate must be greater than 0: " + item);
             }
             rates.put(currency, rate);
         }
         return rates;
     }
 
+    private static String requiredCurrency(String raw, String label) {
+        String normalized = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
+        if (!normalized.matches("[A-Z]{3}")) {
+            throw new IllegalArgumentException(label + " must be a 3-letter currency code");
+        }
+        return normalized;
+    }
+
+    private static double exchangeRate(String sourceCurrency, String targetCurrency, String raw) {
+        if (sourceCurrency.equals(targetCurrency)) {
+            return 1d;
+        }
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalArgumentException("Exchange rate is required when original and target currencies differ");
+        }
+        try {
+            double rate = Double.parseDouble(raw.trim());
+            if (!Double.isFinite(rate) || rate <= 0) {
+                throw new IllegalArgumentException("Exchange rate must be greater than 0");
+            }
+            return rate;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Exchange rate must be a number", e);
+        }
+    }
+
     private static void validateInputExtension(String fileName) {
         int dot = fileName == null ? -1 : fileName.lastIndexOf('.');
         String extension = dot < 0 ? "" : fileName.substring(dot + 1).toLowerCase(Locale.ROOT);
         if (!INPUT_EXTENSIONS.contains(extension)) {
-            throw new IllegalArgumentException("不支持的输入文件：" + fileName);
+            throw new IllegalArgumentException("Unsupported input file: " + fileName);
         }
     }
 

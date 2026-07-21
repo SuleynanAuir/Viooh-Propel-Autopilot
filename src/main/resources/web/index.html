@@ -1,17 +1,17 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Propel frame list 合并与 Excel proposal 导出工具">
-  <title>Propel Web</title>
+  <meta name="description" content="viooh-propel-autopilot frame list merge and Excel proposal export tool">
+  <title>viooh-propel-autopilot</title>
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Propel 首页">
-      <span class="brand-mark" aria-hidden="true">P</span>
-      <span>PROPEL</span>
+    <a class="brand" href="/" aria-label="viooh-propel-autopilot home">
+      <span class="brand-mark" aria-hidden="true">V</span>
+      <span>viooh-propel-autopilot</span>
     </a>
     <span class="topbar-note">Frame planning workspace</span>
   </header>
@@ -19,9 +19,9 @@
   <main>
     <section class="hero">
       <p class="eyebrow">VIOOH PLANNING UTILITY</p>
-      <h1>从 frame lists 到 proposal，<br>一次上传即可完成。</h1>
-      <p class="hero-copy">合并 CSV / TSV / Excel，补充 frame details，并导出与桌面版一致的五个工作表。</p>
-      <div class="sheet-pills" aria-label="导出的工作表">
+      <h1>Build a proposal workbook from frame lists.</h1>
+      <p class="hero-copy">Upload CSV, TSV, or Excel frame files, merge frame details, fetch PICS images from FRAMEIMAGEPATH, and export the same workbook structure as the desktop tool.</p>
+      <div class="sheet-pills" aria-label="Exported workbook sheets">
         <span>UnfilteredFrames</span><span>FilteredFrames</span><span>Proposal</span><span>PICS</span><span>POI</span>
       </div>
     </section>
@@ -31,9 +31,9 @@
         <div class="card-heading">
           <div>
             <span class="step">01</span>
-            <h2 id="upload-title">上传 frame 文件</h2>
+            <h2 id="upload-title">Upload frame files</h2>
           </div>
-          <span id="upload-limit" class="quiet-badge">正在读取限制…</span>
+          <span id="upload-limit" class="quiet-badge">Reading limit...</span>
         </div>
 
         <label id="drop-zone" class="drop-zone" for="input-files">
@@ -41,14 +41,14 @@
           <span class="upload-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
           </span>
-          <strong>拖入文件，或点击选择</strong>
-          <small>至少一个 frame list；可同时加入 frame-details 文件</small>
-          <span class="choose-button">选择文件</span>
+          <strong>Drop files here, or click to browse</strong>
+          <small>Upload at least one frame list. You may include a frame-details file in the same batch.</small>
+          <span class="choose-button">Choose files</span>
         </label>
 
         <div id="file-summary" class="file-summary" hidden>
           <div class="file-summary-bar">
-            <strong id="file-count">0 个文件</strong>
+            <strong id="file-count">0 files</strong>
             <span id="file-size">0 B</span>
           </div>
           <ul id="file-list" class="file-list" aria-live="polite"></ul>
@@ -60,15 +60,15 @@
         <div class="card-heading">
           <div>
             <span class="step">02</span>
-            <h2 id="settings-title">Campaign 参数</h2>
+            <h2 id="settings-title">Campaign settings</h2>
           </div>
-          <span class="required-note"><i></i> 必填项</span>
+          <span class="required-note"><i></i> Required</span>
         </div>
 
         <div class="field-grid">
           <label class="field">
             <span>Campaign budget <b aria-hidden="true">*</b></span>
-            <input id="budget" name="budget" type="number" inputmode="numeric" min="1" step="1" placeholder="例如 500000" required>
+            <input id="budget" name="budget" type="number" inputmode="numeric" min="1" step="1" placeholder="Example: 500000" required>
           </label>
           <label class="field">
             <span>Campaign days <b aria-hidden="true">*</b></span>
@@ -76,61 +76,84 @@
           </label>
           <label class="field full">
             <span>Location</span>
-            <input id="location" name="location" type="text" placeholder="留空时使用 \N">
+            <input id="location" name="location" type="text" placeholder="Leave blank unless a location is required">
           </label>
           <label class="field full">
-            <span>导出文件名</span>
-            <input id="output-name" name="outputName" type="text" value="propel-export.xlsx" autocomplete="off">
+            <span>Export file name</span>
+            <input id="output-name" name="outputName" type="text" value="viooh-propel-autopilot.xlsx" autocomplete="off">
           </label>
         </div>
 
-        <details class="option-panel">
+        <details class="option-panel" open>
           <summary>
-            <span><strong>USD 汇率换算</strong><small>按币种把 CPM 换算为 USD</small></span>
-            <span class="summary-action">配置</span>
+            <span><strong>Currency conversion</strong><small>Select both currencies, even when they are the same.</small></span>
+            <span class="summary-action">Configure</span>
           </summary>
-          <div class="option-content">
-            <label class="switch-row">
-              <input id="convert-usd" name="convertBudgetToUsd" type="checkbox">
-              <span class="switch" aria-hidden="true"></span>
-              <span><strong>启用 USD 换算</strong><small>USD 行无需填写汇率</small></span>
+          <div class="option-content currency-grid">
+            <label class="field">
+              <span>Original currency <b aria-hidden="true">*</b></span>
+              <select id="source-currency" name="sourceCurrency" required>
+                <option value="">Select</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="AED">AED</option>
+                <option value="AUD">AUD</option>
+                <option value="CAD">CAD</option>
+                <option value="CHF">CHF</option>
+                <option value="CNY">CNY</option>
+                <option value="HKD">HKD</option>
+                <option value="JPY">JPY</option>
+                <option value="SGD">SGD</option>
+              </select>
             </label>
-            <label id="rates-field" class="field" hidden>
-              <span>每 1 单位当地货币折合 USD</span>
-              <textarea id="usd-rates" name="usdRates" rows="3" placeholder="EUR=1.08, GBP=1.27"></textarea>
+            <label class="field">
+              <span>Target currency <b aria-hidden="true">*</b></span>
+              <select id="target-currency" name="targetCurrency" required>
+                <option value="">Select</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="AED">AED</option>
+                <option value="AUD">AUD</option>
+                <option value="CAD">CAD</option>
+                <option value="CHF">CHF</option>
+                <option value="CNY">CNY</option>
+                <option value="HKD">HKD</option>
+                <option value="JPY">JPY</option>
+                <option value="SGD">SGD</option>
+              </select>
+            </label>
+            <label id="exchange-rate-field" class="field full">
+              <span>Exchange rate <b aria-hidden="true">*</b></span>
+              <input id="exchange-rate" name="exchangeRate" type="number" min="0" step="0.0001" placeholder="1 original currency unit in target currency">
             </label>
           </div>
         </details>
 
         <details class="option-panel">
           <summary>
-            <span><strong>PICS 图片</strong><small>可上传本地图片文件夹</small></span>
-            <span class="summary-action">配置</span>
+            <span><strong>PICS images</strong><small>Images are fetched only from FRAMEIMAGEPATH.</small></span>
+            <span class="summary-action">Configure</span>
           </summary>
           <div class="option-content stack">
-            <label class="folder-picker" for="pics-files">
-              <input id="pics-files" type="file" webkitdirectory multiple>
-              <span aria-hidden="true">＋</span>
-              <span><strong>选择 PICS 文件夹</strong><small id="pics-summary">未选择；这是可选项</small></span>
-            </label>
-            <label class="switch-row disabled" id="remote-images-row">
-              <input id="fetch-remote" name="fetchPicsFromLinks" type="checkbox" disabled>
-              <span class="switch" aria-hidden="true"></span>
-              <span><strong>从 FRAMEIMAGEPATH 抓取图片</strong><small id="remote-images-help">公网部署默认关闭</small></span>
-            </label>
+            <div class="info-box" id="remote-images-row">
+              <strong>FRAMEIMAGEPATH image fetching</strong>
+              <small id="remote-images-help">The backend will fetch image URLs from the FRAMEIMAGEPATH column. Local PICS folder upload is not supported.</small>
+            </div>
           </div>
         </details>
 
         <details class="option-panel">
           <summary>
-            <span><strong>Photography budget</strong><small>仅在全部库存满配后使用剩余预算</small></span>
-            <span class="summary-action">配置</span>
+            <span><strong>Photography budget</strong><small>Use remaining budget only after all inventory is fully allocated.</small></span>
+            <span class="summary-action">Configure</span>
           </summary>
           <div class="option-content">
-            <fieldset class="segmented" aria-label="Photography budget 模式">
-              <label><input type="radio" name="photographyMode" value="none" checked><span>不添加</span></label>
-              <label><input type="radio" name="photographyMode" value="auto"><span>自动使用余款</span></label>
-              <label><input type="radio" name="photographyMode" value="custom"><span>自定义</span></label>
+            <fieldset class="segmented" aria-label="Photography budget mode">
+              <label><input type="radio" name="photographyMode" value="none" checked><span>None</span></label>
+              <label><input type="radio" name="photographyMode" value="auto"><span>Auto</span></label>
+              <label><input type="radio" name="photographyMode" value="custom"><span>Custom</span></label>
             </fieldset>
             <label id="photography-custom-field" class="field" hidden>
               <span>Photography budget</span>
@@ -142,24 +165,24 @@
 
       <section class="submit-panel" aria-live="polite">
         <div class="submit-copy">
-          <p id="status-title">准备生成工作簿</p>
-          <span id="status-detail">文件只用于本次处理，任务结束后会清理临时副本。</span>
+          <p id="status-title">Ready to generate the workbook</p>
+          <span id="status-detail">Uploaded files are used only for this export and temporary copies are removed after the request completes.</span>
         </div>
         <button id="submit-button" type="submit">
-          <span class="button-label">生成并下载 Excel</span>
+          <span class="button-label">Generate Excel</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
         </button>
         <div id="progress-wrap" class="progress-wrap" hidden>
           <div class="progress-track"><i id="progress-bar"></i></div>
-          <span id="progress-text">正在上传 0%</span>
+          <span id="progress-text">Uploading 0%</span>
         </div>
       </section>
     </form>
   </main>
 
   <footer>
-    <span>Propel Web</span>
-    <span>CSV / TSV / XLS / XLSX → XLSX</span>
+    <span>viooh-propel-autopilot</span>
+    <span>CSV / TSV / XLS / XLSX to XLSX</span>
   </footer>
 
   <script src="/app.js" defer></script>

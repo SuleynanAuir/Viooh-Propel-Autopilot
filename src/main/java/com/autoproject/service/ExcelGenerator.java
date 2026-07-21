@@ -209,7 +209,7 @@ public class ExcelGenerator {
         header.createCell(2).setCellValue("POI");
 
         Map<String, LinkedHashSet<String>> countriesByPoi = collectIso3CountriesByPoi(list);
-        String location = brief == null ? NULL_SENTINEL : normalizeText(brief.getLocation());
+        String location = brief == null ? "" : normalizeOptionalText(brief.getLocation());
         Set<String> seen = new LinkedHashSet<>();
         int rowNum = 1;
         for (FrameData data : list) {
@@ -290,6 +290,17 @@ public class ExcelGenerator {
         String trimmed = value.trim();
         if (trimmed.isEmpty() || trimmed.equalsIgnoreCase("null") || trimmed.equals("\\N") || trimmed.equals("-")) {
             return NULL_SENTINEL;
+        }
+        return trimmed;
+    }
+
+    private static String normalizeOptionalText(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty() || trimmed.equalsIgnoreCase("null") || trimmed.equals("\\N") || trimmed.equals("-")) {
+            return "";
         }
         return trimmed;
     }

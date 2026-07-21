@@ -12,7 +12,7 @@ COPY --from=build /build/target/Auto_project-1.0-SNAPSHOT.jar /app/propel.jar
 ENV PORT=8080 \
     PROPEL_MAX_UPLOAD_BYTES=262144000 \
     PROPEL_MAX_CONCURRENT_EXPORTS=1 \
-    PROPEL_ALLOW_REMOTE_IMAGES=false \
+    PROPEL_ALLOW_REMOTE_IMAGES=true \
     JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true"
 EXPOSE 8080
 USER propel

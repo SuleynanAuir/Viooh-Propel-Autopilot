@@ -12,9 +12,11 @@ const statusDetail = document.querySelector('#status-detail');
 const progressWrap = document.querySelector('#progress-wrap');
 const progressBar = document.querySelector('#progress-bar');
 const progressText = document.querySelector('#progress-text');
-const picsPicker = document.querySelector('#pics-files');
-const picsSummary = document.querySelector('#pics-summary');
 const maxUploadLabel = document.querySelector('#upload-limit');
+const sourceCurrency = document.querySelector('#source-currency');
+const targetCurrency = document.querySelector('#target-currency');
+const exchangeRate = document.querySelector('#exchange-rate');
+const exchangeRateField = document.querySelector('#exchange-rate-field');
 
 let selectedFiles = [];
 let maxUploadBytes = Infinity;
@@ -35,7 +37,7 @@ function addFiles(files) {
       existing.add(fileKey(file));
     }
   }
-  fileError.textContent = rejected ? `已忽略 ${rejected} 个不支持的文件。` : '';
+  fileError.textContent = rejected ? `${rejected} unsupported file(s) were ignored.` : '';
   renderFiles();
 }
 
@@ -43,7 +45,7 @@ function renderFiles() {
   fileList.replaceChildren();
   const total = selectedFiles.reduce((sum, file) => sum + file.size, 0);
   fileSummary.hidden = selectedFiles.length === 0;
-  fileCount.textContent = `${selectedFiles.length} 个文件`;
+  fileCount.textContent = `${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'}`;
   fileSize.textContent = formatBytes(total);
 
   selectedFiles.forEach((file, index) => {
@@ -61,7 +63,7 @@ function renderFiles() {
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'remove-file';
-    remove.setAttribute('aria-label', `移除 ${file.name}`);
+    remove.setAttribute('aria-label', `Remove ${file.name}`);
     remove.textContent = '×';
     remove.addEventListener('click', () => {
       selectedFiles.splice(index, 1);
@@ -90,6 +92,18 @@ function formatBytes(bytes) {
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
 }
 
+function syncExchangeRateRequirement() {
+  const sameCurrency = sourceCurrency.value && sourceCurrency.value === targetCurrency.value;
+  exchangeRateField.classList.toggle('disabled', sameCurrency);
+  exchangeRate.required = !sameCurrency;
+  exchangeRate.disabled = sameCurrency;
+  if (sameCurrency) {
+    exchangeRate.value = '1';
+  } else if (exchangeRate.value === '1') {
+    exchangeRate.value = '';
+  }
+}
+
 inputPicker.addEventListener('change', () => {
   addFiles(inputPicker.files);
   inputPicker.value = '';
@@ -109,9 +123,8 @@ for (const eventName of ['dragleave', 'drop']) {
 }
 dropZone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
 
-document.querySelector('#convert-usd').addEventListener('change', event => {
-  document.querySelector('#rates-field').hidden = !event.target.checked;
-});
+sourceCurrency.addEventListener('change', syncExchangeRateRequirement);
+targetCurrency.addEventListener('change', syncExchangeRateRequirement);
 
 for (const radio of document.querySelectorAll('input[name="photographyMode"]')) {
   radio.addEventListener('change', () => {
@@ -119,60 +132,52 @@ for (const radio of document.querySelectorAll('input[name="photographyMode"]')) 
   });
 }
 
-picsPicker.addEventListener('change', () => {
-  const files = [...picsPicker.files];
-  const bytes = files.reduce((sum, file) => sum + file.size, 0);
-  picsSummary.textContent = files.length ? `${files.length} 个文件 · ${formatBytes(bytes)}` : '未选择；这是可选项';
-});
-
 async function loadServerCapabilities() {
   try {
     const response = await fetch('/api/health', { cache: 'no-store' });
     if (!response.ok) throw new Error('health check failed');
     const health = await response.json();
     maxUploadBytes = health.maxUploadBytes;
-    maxUploadLabel.textContent = `单次上限 ${formatBytes(maxUploadBytes)}`;
-    const remote = document.querySelector('#fetch-remote');
-    const row = document.querySelector('#remote-images-row');
+    maxUploadLabel.textContent = `Limit ${formatBytes(maxUploadBytes)} per request`;
     const help = document.querySelector('#remote-images-help');
-    remote.disabled = !health.allowRemoteImages;
-    row.classList.toggle('disabled', !health.allowRemoteImages);
-    help.textContent = health.allowRemoteImages ? '仅对可信的 FRAMEIMAGEPATH 启用' : '此部署已关闭；可改用 PICS 文件夹';
+    help.textContent = health.allowRemoteImages
+      ? 'The backend will fetch image URLs from the FRAMEIMAGEPATH column. Local PICS folder upload is not supported.'
+      : 'This deployment has disabled FRAMEIMAGEPATH image fetching. Ask the deployment owner to enable it.';
   } catch {
-    maxUploadLabel.textContent = '服务连接异常';
-    statusTitle.textContent = '暂时无法连接导出服务';
-    statusDetail.textContent = '请刷新页面或联系部署管理员。';
+    maxUploadLabel.textContent = 'Service unavailable';
+    statusTitle.textContent = 'Export service is unavailable';
+    statusDetail.textContent = 'Refresh the page or contact the deployment owner.';
   }
 }
 
 form.addEventListener('submit', event => {
   event.preventDefault();
   fileError.textContent = '';
+  syncExchangeRateRequirement();
   if (!form.reportValidity()) return;
   if (selectedFiles.length === 0) {
-    fileError.textContent = '请至少选择一个 frame list 文件。';
+    fileError.textContent = 'Select at least one frame list file.';
     dropZone.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
   if (selectedFiles.every(file => isDetailsFile(file.name))) {
-    fileError.textContent = '不能只上传 frame-details；还需要至少一个 frame list。';
+    fileError.textContent = 'Frame-details files cannot be uploaded alone. Add at least one frame list.';
     return;
   }
 
-  const pics = [...picsPicker.files];
-  const estimatedBytes = [...selectedFiles, ...pics].reduce((sum, file) => sum + file.size, 0);
+  const estimatedBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
   if (estimatedBytes > maxUploadBytes) {
-    fileError.textContent = `文件合计 ${formatBytes(estimatedBytes)}，超过 ${formatBytes(maxUploadBytes)} 的单次上限。`;
+    fileError.textContent = `Files total ${formatBytes(estimatedBytes)}, above the ${formatBytes(maxUploadBytes)} request limit.`;
     return;
   }
 
   const body = new FormData(form);
   body.delete('inputFiles');
-  body.delete('picsFiles');
   for (const file of selectedFiles) body.append('inputFiles', file, file.name);
-  for (const file of pics) body.append('picsFiles', file, file.webkitRelativePath || file.name);
-  body.set('convertBudgetToUsd', document.querySelector('#convert-usd').checked ? 'true' : 'false');
-  body.set('fetchPicsFromLinks', document.querySelector('#fetch-remote').checked ? 'true' : 'false');
+  body.set('sourceCurrency', sourceCurrency.value);
+  body.set('targetCurrency', targetCurrency.value);
+  body.set('exchangeRate', sourceCurrency.value === targetCurrency.value ? '1' : exchangeRate.value);
+  body.set('fetchPicsFromLinks', 'true');
 
   setBusy(true);
   const xhr = new XMLHttpRequest();
@@ -183,18 +188,18 @@ form.addEventListener('submit', event => {
     const percentage = Math.min(100, Math.round(uploadEvent.loaded / uploadEvent.total * 100));
     progressBar.classList.remove('indeterminate');
     progressBar.style.width = `${percentage}%`;
-    progressText.textContent = `正在上传 ${percentage}%`;
+    progressText.textContent = `Uploading ${percentage}%`;
     if (percentage === 100) {
-      statusTitle.textContent = '服务器正在生成工作簿';
-      statusDetail.textContent = '大文件的合并、图片和 Excel 排版可能需要几分钟。';
-      progressText.textContent = '正在处理';
+      statusTitle.textContent = 'Server is generating the workbook';
+      statusDetail.textContent = 'Large merges, FRAMEIMAGEPATH image fetching, and Excel formatting may take a few minutes.';
+      progressText.textContent = 'Processing';
       progressBar.style.width = '';
       progressBar.classList.add('indeterminate');
     }
   });
   xhr.addEventListener('load', async () => {
     if (xhr.status >= 200 && xhr.status < 300) {
-      const name = responseFileName(xhr.getResponseHeader('Content-Disposition')) || 'propel-export.xlsx';
+      const name = responseFileName(xhr.getResponseHeader('Content-Disposition')) || 'viooh-propel-autopilot.xlsx';
       const url = URL.createObjectURL(xhr.response);
       const link = document.createElement('a');
       link.href = url;
@@ -206,23 +211,23 @@ form.addEventListener('submit', event => {
       const merged = xhr.getResponseHeader('X-Propel-Merged-Rows');
       const filtered = xhr.getResponseHeader('X-Propel-Filtered-Rows');
       setBusy(false, 'success');
-      statusTitle.textContent = 'Excel 已生成并开始下载';
-      statusDetail.textContent = merged ? `合并 ${merged} 行，FilteredFrames 保留 ${filtered} 行。` : '可以继续调整参数并再次导出。';
+      statusTitle.textContent = 'Excel workbook generated';
+      statusDetail.textContent = merged ? `Merged ${merged} rows. FilteredFrames keeps ${filtered} rows.` : 'You can adjust settings and export again.';
       return;
     }
-    let message = `请求失败（${xhr.status}）`;
+    let message = `Request failed (${xhr.status})`;
     try {
       const payload = JSON.parse(await xhr.response.text());
       if (payload.error) message = payload.error;
     } catch { /* response was not JSON */ }
     setBusy(false, 'error');
-    statusTitle.textContent = '未能生成工作簿';
+    statusTitle.textContent = 'Workbook generation failed';
     statusDetail.textContent = message;
   });
   xhr.addEventListener('error', () => {
     setBusy(false, 'error');
-    statusTitle.textContent = '网络连接中断';
-    statusDetail.textContent = '上传未完成，请检查网络后重试。';
+    statusTitle.textContent = 'Network connection interrupted';
+    statusDetail.textContent = 'The upload did not complete. Check the connection and try again.';
   });
   xhr.send(body);
 });
@@ -230,11 +235,11 @@ form.addEventListener('submit', event => {
 function setBusy(busy, outcome) {
   submitButton.disabled = busy;
   progressWrap.hidden = !busy;
-  document.querySelector('.button-label').textContent = busy ? '正在处理…' : '生成并下载 Excel';
+  document.querySelector('.button-label').textContent = busy ? 'Processing...' : 'Generate Excel';
   if (busy) {
-    statusTitle.textContent = '正在上传文件';
-    statusDetail.textContent = '请保持当前页面打开。';
-    progressText.textContent = '准备上传';
+    statusTitle.textContent = 'Uploading files';
+    statusDetail.textContent = 'Keep this page open while the export runs.';
+    progressText.textContent = 'Preparing upload';
     progressBar.classList.remove('indeterminate');
     progressBar.style.width = '0';
   } else {
@@ -253,4 +258,5 @@ function responseFileName(header) {
   return simple ? simple[1] : null;
 }
 
+syncExchangeRateRequirement();
 loadServerCapabilities();

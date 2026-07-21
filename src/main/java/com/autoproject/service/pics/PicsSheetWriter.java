@@ -45,7 +45,7 @@ public class PicsSheetWriter {
     }
 
     /**
-     * @param fetchFromLinks when false, skips HTTP/local link resolution and uses only the local PICS folder images.
+     * @param fetchFromLinks when false, skips FRAMEIMAGEPATH resolution.
      * @param progress       optional; notified per group (may be called from a background thread).
      */
     public void write(
@@ -65,18 +65,9 @@ public class PicsSheetWriter {
             return;
         }
 
-        Path localPicsRoot = (localPicsRootPath == null || localPicsRootPath.isBlank())
-                ? null
-                : Path.of(localPicsRootPath.trim());
-
         Map<GroupKey, List<FrameData>> framesByGroup = groupFramesByKey(frames);
         int totalGroups = framesByGroup.size();
         prog.onStart(totalGroups);
-
-        Map<FolderTriple, Path> folderIndex =
-                localPicsRoot != null && Files.isDirectory(localPicsRoot)
-                        ? indexFoldersByTriple(localPicsRoot)
-                        : Collections.emptyMap();
 
         HttpClient httpClient = fetchFromLinks ? FrameImageLinkFetcher.newClient() : null;
         int rowNum = 1;
@@ -95,20 +86,7 @@ public class PicsSheetWriter {
                         refs, maxFramesForLinks, httpClient, prog);
             }
 
-            List<FrameImageLinkFetcher.PooledImage> pool = new ArrayList<>();
-            if (!fromLinks.isEmpty()) {
-                pool.addAll(fromLinks);
-            }
-            // Link-first; if still fewer than {@link #MAX_PICK_COUNT} images, supplement from local folder.
-            if (pool.isEmpty() || (fetchFromLinks && pool.size() < MAX_PICK_COUNT)) {
-                Path folder = resolveFolderForGroup(key, folderIndex);
-                List<Path> imageFiles = folder == null ? Collections.emptyList() : findImageFiles(folder);
-                for (Path p : imageFiles) {
-                    FrameImageLinkFetcher.pooledFromLocalPathLenient(p).ifPresent(pool::add);
-                }
-            }
-
-            List<FrameImageLinkFetcher.PooledImage> picked = pickRandomPooled(pool);
+            List<FrameImageLinkFetcher.PooledImage> picked = pickRandomPooled(fromLinks);
             int imageRowIndex = rowNum;
             Row row = picsSheet.createRow(imageRowIndex);
             row.setHeightInPoints(130f);

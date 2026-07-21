@@ -27,7 +27,7 @@ public final class ProposalPricing {
             return evenAdjusted;
         }
         String currency = normalizeCurrency(row.getMediaOwnerCurrency());
-        return convertFloorCpmToUsd(evenAdjusted, currency, brief.getUsdExchangeRateByCurrency());
+        return convertFloorCpm(evenAdjusted, currency, brief);
     }
 
     public static Double effectiveCpmForBudget(FrameData frame, Brief brief) {
@@ -42,7 +42,7 @@ public final class ProposalPricing {
             return evenAdjusted;
         }
         String currency = normalizeCurrency(frame.getMediaOwnerCurrency());
-        return convertFloorCpmToUsd(evenAdjusted, currency, brief.getUsdExchangeRateByCurrency());
+        return convertFloorCpm(evenAdjusted, currency, brief);
     }
 
     public static Double calculateEvenAdjustedFloorCpm(Double floorCpm, String vioohSelectOptin) {
@@ -93,6 +93,31 @@ public final class ProposalPricing {
             }
         }
         return null;
+    }
+
+    public static Double convertFloorCpm(Double floorCpm, String rowCurrency, Brief brief) {
+        if (floorCpm == null || brief == null) {
+            return null;
+        }
+        String sourceCurrency = normalizeCurrency(brief.getSourceCurrency());
+        String targetCurrency = normalizeCurrency(brief.getTargetCurrency());
+        if (sourceCurrency != null && targetCurrency != null) {
+            String normalizedRowCurrency = normalizeCurrency(rowCurrency);
+            if (normalizedRowCurrency != null && !sourceCurrency.equals(normalizedRowCurrency)) {
+                return null;
+            }
+            if (sourceCurrency.equals(targetCurrency)) {
+                return floorCpm;
+            }
+            Double rate = brief.getCurrencyExchangeRate();
+            if (rate == null || rate <= 0) {
+                return null;
+            }
+            return BigDecimal.valueOf(floorCpm * rate)
+                    .setScale(4, RoundingMode.HALF_UP)
+                    .doubleValue();
+        }
+        return convertFloorCpmToUsd(floorCpm, rowCurrency, brief.getUsdExchangeRateByCurrency());
     }
 
     private static boolean isYes(String value) {

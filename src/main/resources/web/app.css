@@ -26,7 +26,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 
 .topbar {
   height: 76px;
@@ -185,7 +185,7 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .field.full { grid-column: 1 / -1; }
 .field > span { color: #4d5b61; font-size: 12px; font-weight: 700; }
 .field b { color: var(--violet); }
-.field input, .field textarea {
+.field input, .field textarea, .field select {
   width: 100%;
   border: 1px solid #cfd9d6;
   border-radius: 11px;
@@ -195,7 +195,10 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
   outline: none;
   transition: border .15s, box-shadow .15s;
 }
-.field input:focus, .field textarea:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(73, 53, 111, .1); }
+.field select { appearance: none; }
+.field.disabled { opacity: .58; }
+.field.disabled input { cursor: not-allowed; }
+.field input:focus, .field textarea:focus, .field select:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(73, 53, 111, .1); }
 .field input:invalid:not(:placeholder-shown) { border-color: var(--danger); }
 .field textarea { resize: vertical; line-height: 1.5; }
 
@@ -206,11 +209,24 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .option-panel summary strong { font-size: 13px; }
 .option-panel summary small, .switch-row small, .folder-picker small { color: var(--muted); font-size: 11px; font-weight: 400; }
 .summary-action { color: var(--violet); font-size: 11px; font-weight: 750; }
-.option-panel[open] .summary-action::after { content: "收起"; }
+.option-panel[open] .summary-action::after { content: "Collapse"; }
 .option-panel[open] .summary-action { font-size: 0; }
 .option-panel[open] .summary-action::after { font-size: 11px; }
 .option-content { padding: 20px 2px 4px; display: grid; gap: 18px; }
 .option-content.stack { gap: 12px; }
+
+.info-box {
+  padding: 13px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid #d6dfdc;
+  border-radius: 11px;
+  background: #fafcfb;
+}
+
+.info-box strong { font-size: 12px; }
+.info-box small { color: var(--muted); font-size: 11px; line-height: 1.5; }
 
 .switch-row { display: flex; align-items: center; gap: 11px; cursor: pointer; }
 .switch-row input { position: absolute; opacity: 0; }

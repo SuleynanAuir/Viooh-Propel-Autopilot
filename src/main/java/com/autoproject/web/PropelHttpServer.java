@@ -37,7 +37,7 @@ final class PropelHttpServer {
 
     PropelHttpServer(int port) throws IOException {
         this.maxUploadBytes = longEnvironment("PROPEL_MAX_UPLOAD_BYTES", 250L * 1024 * 1024, 1024, Long.MAX_VALUE);
-        this.allowRemoteImages = booleanEnvironment("PROPEL_ALLOW_REMOTE_IMAGES", false);
+        this.allowRemoteImages = booleanEnvironment("PROPEL_ALLOW_REMOTE_IMAGES", true);
         int concurrentExports = (int) longEnvironment("PROPEL_MAX_CONCURRENT_EXPORTS", 1, 1, 16);
         this.exportSlots = new Semaphore(concurrentExports);
         this.server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
@@ -72,7 +72,7 @@ final class PropelHttpServer {
         }
         if (!exportSlots.tryAcquire()) {
             exchange.getResponseHeaders().set("Retry-After", "15");
-            sendJson(exchange, 429, errorJson("服务器正在生成另一份工作簿，请稍后重试。"));
+            sendJson(exchange, 429, errorJson("Another workbook is being generated. Please try again shortly."));
             return;
         }
 
@@ -80,7 +80,7 @@ final class PropelHttpServer {
         try {
             long contentLength = parseContentLength(exchange.getRequestHeaders().getFirst("Content-Length"));
             if (contentLength > maxUploadBytes) {
-                sendJson(exchange, 413, errorJson("上传内容超过服务器限制。"));
+                sendJson(exchange, 413, errorJson("The upload exceeds the server limit."));
                 return;
             }
             taskRoot = Files.createTempDirectory("propel-web-");
@@ -97,7 +97,7 @@ final class PropelHttpServer {
             sendJson(exchange, 400, errorJson(rootMessage(e)));
         } catch (Exception e) {
             e.printStackTrace(System.err);
-            sendJson(exchange, 500, errorJson("生成工作簿失败：" + rootMessage(e)));
+            sendJson(exchange, 500, errorJson("Workbook generation failed: " + rootMessage(e)));
         } finally {
             if (taskRoot != null) {
                 deleteTree(taskRoot);

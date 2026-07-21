@@ -13,8 +13,11 @@ public class Brief {
     private Double sot;
     private boolean convertBudgetToUsd;
     private Double usdExchangeRate;
+    private String sourceCurrency;
+    private String targetCurrency;
+    private Double currencyExchangeRate;
     private String localPicsRootPath;
-    /** When false, PICS skips downloading from {@code FRAMEIMAGEPATH} URLs and uses only local folder images. */
+    /** When false, PICS skips downloading from {@code FRAMEIMAGEPATH} URLs. */
     private boolean picsFetchFromLinks = true;
     /**
      * Optional line item when frames are fully allocated but campaign budget remains; does not affect
@@ -112,6 +115,30 @@ public class Brief {
         this.usdExchangeRate = usdExchangeRate;
     }
 
+    public String getSourceCurrency() {
+        return sourceCurrency;
+    }
+
+    public void setSourceCurrency(String sourceCurrency) {
+        this.sourceCurrency = normalizeCurrency(sourceCurrency);
+    }
+
+    public String getTargetCurrency() {
+        return targetCurrency;
+    }
+
+    public void setTargetCurrency(String targetCurrency) {
+        this.targetCurrency = normalizeCurrency(targetCurrency);
+    }
+
+    public Double getCurrencyExchangeRate() {
+        return currencyExchangeRate;
+    }
+
+    public void setCurrencyExchangeRate(Double currencyExchangeRate) {
+        this.currencyExchangeRate = currencyExchangeRate;
+    }
+
     public Map<String, Double> getUsdExchangeRateByCurrency() {
         return Collections.unmodifiableMap(usdExchangeRateByCurrency);
     }
@@ -146,5 +173,13 @@ public class Brief {
 
     public void setPhotographyBudget(int photographyBudget) {
         this.photographyBudget = Math.max(0, photographyBudget);
+    }
+
+    private static String normalizeCurrency(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim().toUpperCase(java.util.Locale.ROOT);
+        return normalized.isEmpty() ? null : normalized;
     }
 }

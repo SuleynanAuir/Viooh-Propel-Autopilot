@@ -14,7 +14,6 @@ import org.apache.poi.ss.util.CellRangeAddress;
 
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -33,7 +32,7 @@ public class ProposalSummarySheetWriter {
             "VIOOHSELECTCPMLOCAL",
             "Floor price 2026 CPM (VS)",
             "MEDIAOWNERCURRENCY",
-            "Floor price 2026 CPM (USD)",
+            "Floor price 2026 CPM (target)",
             "VIOOHSELECTOPTIN",
             "MARKET",
             "Screen no.",
@@ -42,7 +41,7 @@ public class ProposalSummarySheetWriter {
             "Suggested screen no",
             "Suggested SOT",
             "Impression deliverable",
-            "Media Budget (USD)",
+            "Media Budget (target)",
             "DSP fee",
             "Total investment"
     };
@@ -60,12 +59,10 @@ public class ProposalSummarySheetWriter {
 
     public void write(Sheet sheet, List<ProposalSummaryRow> rows, Brief brief) {
         ensureDataStyles(sheet);
-        writeHeader(sheet);
         Integer campaignDays = brief == null ? null : brief.getCampaignDays();
         boolean shouldConvertToUsd = brief != null && brief.isConvertBudgetToUsd();
-        Map<String, Double> usdExchangeRateByCurrency = brief == null
-                ? Collections.emptyMap()
-                : brief.getUsdExchangeRateByCurrency();
+        String targetCurrency = brief == null ? null : ProposalPricing.normalizeCurrency(brief.getTargetCurrency());
+        writeHeader(sheet, targetCurrency);
         List<Double> cpmForBudgetPerRow = new ArrayList<>(rows.size());
         for (ProposalSummaryRow summaryRow : rows) {
             cpmForBudgetPerRow.add(ProposalPricing.effectiveCpmForBudget(summaryRow, brief));
@@ -89,10 +86,10 @@ public class ProposalSummarySheetWriter {
             setNumberOrNull(row.createCell(c++), evenAdjustedFloorCpm);
             String currency = ProposalPricing.normalizeCurrency(summaryRow.getMediaOwnerCurrency());
             setTextCell(row.createCell(c++), currency);
-            Double usdFloorCpm = shouldConvertToUsd
-                    ? ProposalPricing.convertFloorCpmToUsd(evenAdjustedFloorCpm, currency, usdExchangeRateByCurrency)
+            Double convertedFloorCpm = shouldConvertToUsd
+                    ? ProposalPricing.convertFloorCpm(evenAdjustedFloorCpm, currency, brief)
                     : null;
-            setNumberOrNull(row.createCell(c++), usdFloorCpm);
+            setNumberOrNull(row.createCell(c++), convertedFloorCpm);
             setTextCell(row.createCell(c++), summaryRow.getVioohSelectOptin());
             setTextCell(row.createCell(c++), summaryRow.getMarket());
             Cell countCell = row.createCell(c++);
@@ -123,15 +120,20 @@ public class ProposalSummarySheetWriter {
         return SUMMARY_HEADERS.length;
     }
 
-    private void writeHeader(Sheet sheet) {
+    private void writeHeader(Sheet sheet, String targetCurrency) {
         Row header = sheet.createRow(0);
         CellStyle blueHeaderStyle = createHeaderStyle(sheet, IndexedColors.LIGHT_BLUE);
         CellStyle orangeHeaderStyle = createHeaderStyle(sheet, IndexedColors.LIGHT_ORANGE);
         for (int i = 0; i < SUMMARY_HEADERS.length; i++) {
             Cell cell = header.createCell(i);
-            cell.setCellValue(SUMMARY_HEADERS[i]);
+            cell.setCellValue(headerLabel(SUMMARY_HEADERS[i], targetCurrency));
             cell.setCellStyle(i <= MONTHLY_IMP_COLUMN_INDEX ? blueHeaderStyle : orangeHeaderStyle);
         }
+    }
+
+    private String headerLabel(String template, String targetCurrency) {
+        String displayCurrency = targetCurrency == null ? "target" : targetCurrency;
+        return template.replace("(target)", "(" + displayCurrency + ")");
     }
 
     private CellStyle createHeaderStyle(Sheet sheet, IndexedColors fillColor) {

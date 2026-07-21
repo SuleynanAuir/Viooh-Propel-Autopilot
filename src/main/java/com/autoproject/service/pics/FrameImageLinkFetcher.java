@@ -19,7 +19,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Fetches frame preview images from {@code FRAMEIMAGEPATH} URLs (http/https) or local file paths.
+ * Fetches frame preview images from {@code FRAMEIMAGEPATH} URLs (http/https).
  */
 final class FrameImageLinkFetcher {
 
@@ -109,15 +109,8 @@ final class FrameImageLinkFetcher {
         if (t.isEmpty()) {
             return Optional.empty();
         }
-        if (t.regionMatches(true, 0, "file://", 0, 7)) {
-            return readLocalFileToPooled(URI.create(t));
-        }
         if (t.regionMatches(true, 0, "http://", 0, 7) || t.regionMatches(true, 0, "https://", 0, 8)) {
             return fetchHttp(t, httpClient);
-        }
-        Path local = Path.of(t);
-        if (Files.isRegularFile(local)) {
-            return readPathToPooled(local);
         }
         return Optional.empty();
     }
