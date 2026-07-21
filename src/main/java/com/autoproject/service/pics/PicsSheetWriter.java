@@ -1,6 +1,7 @@
 package com.autoproject.service.pics;
 
 import com.autoproject.model.FrameData;
+import com.autoproject.service.summary.ProposalSummaryRow;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.ClientAnchor;
 import org.apache.poi.ss.usermodel.Drawing;
@@ -32,7 +33,7 @@ public class PicsSheetWriter {
     private static final String NULL_SENTINEL = "\\N";
     private static final String FOLDER_SEPARATOR = "\u2014";
     private static final int MIN_PICK_COUNT = 2;
-    private static final int MAX_PICK_COUNT = 3;
+    static final int MAX_PICK_COUNT = 3;
     /** Default max frames per PICS group whose {@code FRAMEIMAGEPATH} links are tried (non-billboard venue). */
     private static final int MAX_FRAMES_PER_GROUP_FOR_LINKS_DEFAULT = 20;
     /** Max frames for venue taxonomy in the {@code billboard.*} class (dotted or underscore form). */
@@ -109,6 +110,84 @@ public class PicsSheetWriter {
         }
 
         finishColumnSizing(picsSheet);
+    }
+
+    /**
+     * Writes PICS rows from Proposal dimensions and resolves images from {@code feishu/supply_matrix.xlsx}.
+     *
+     * <p>Each Proposal row contributes Country + MARKET + dotted Venue type tokens. Images are downloaded to
+     * {@code metaDir} before being inserted into this sheet.</p>
+     */
+    public void writeFromProposalRows(
+            Sheet picsSheet,
+            List<ProposalSummaryRow> proposalRows,
+            Path supplyMatrixPath,
+            Path metaDir,
+            boolean fetchFromLinks,
+            PicsLinkProgress progress) {
+        PicsLinkProgress prog = progress == null ? PicsLinkProgress.noop() : progress;
+        picMetaTextStyle = null;
+        writeHeader(picsSheet);
+        if (proposalRows == null || proposalRows.isEmpty()) {
+            prog.onStart(0);
+            Row row = picsSheet.createRow(1);
+            row.createCell(0).setCellValue("No Proposal rows. Skip PICS insertion.");
+            finishColumnSizing(picsSheet);
+            return;
+        }
+
+        List<ProposalSummaryRow> rows = dedupeProposalPicsRows(proposalRows);
+        prog.onStart(rows.size());
+        SupplyMatrixImageResolver resolver = fetchFromLinks
+                ? SupplyMatrixImageResolver.load(supplyMatrixPath)
+                : SupplyMatrixImageResolver.load(null);
+        HttpClient httpClient = fetchFromLinks && !resolver.isEmpty() ? FrameImageLinkFetcher.newClient() : null;
+
+        int rowNum = 1;
+        int completed = 0;
+        for (ProposalSummaryRow proposalRow : rows) {
+            List<FrameImageLinkFetcher.PooledImage> resolved = httpClient == null
+                    ? List.of()
+                    : resolver.resolveImages(proposalRow, httpClient, metaDir, MAX_PICK_COUNT);
+            List<FrameImageLinkFetcher.PooledImage> picked = pickRandomPooled(resolved);
+            int imageRowIndex = rowNum;
+            Row row = picsSheet.createRow(imageRowIndex);
+            row.setHeightInPoints(130f);
+            row.createCell(0).setCellValue(normalizeOrNullSentinel(proposalRow.getMarket()));
+            row.createCell(1).setCellValue(normalizeOrNullSentinel(proposalRow.getAddressIso3CountryCode()));
+            row.createCell(2).setCellValue(normalizeOrNullSentinel(proposalRow.getVenueTaxonomyValue()));
+            row.createCell(3).setCellValue(picked.size());
+
+            for (int i = 0; i < picked.size(); i++) {
+                insertPooledImage(picsSheet, imageRowIndex, 4 + i, picked.get(i));
+            }
+            if (picked.stream().anyMatch(FrameImageLinkFetcher.PooledImage::fromLinkField)) {
+                writeLinkMetaRow(picsSheet, imageRowIndex + 1, picked);
+                rowNum = imageRowIndex + 2;
+            } else {
+                rowNum = imageRowIndex + 1;
+            }
+            completed++;
+            prog.onGroupDone(completed, rows.size(), proposalRow.getVenueTaxonomyValue());
+        }
+
+        finishColumnSizing(picsSheet);
+    }
+
+    private List<ProposalSummaryRow> dedupeProposalPicsRows(List<ProposalSummaryRow> proposalRows) {
+        Map<String, ProposalSummaryRow> out = new LinkedHashMap<>();
+        for (ProposalSummaryRow row : proposalRows) {
+            String country = normalizeText(row.getAddressIso3CountryCode());
+            String market = normalizeText(row.getMarket());
+            String venueType = normalizeText(row.getVenueTaxonomyValue());
+            if (country == null || market == null || venueType == null) {
+                continue;
+            }
+            out.putIfAbsent(country.toLowerCase(Locale.ROOT)
+                    + "\0" + market.toLowerCase(Locale.ROOT)
+                    + "\0" + venueType.toLowerCase(Locale.ROOT), row);
+        }
+        return new ArrayList<>(out.values());
     }
 
     /**
@@ -366,8 +445,8 @@ public class PicsSheetWriter {
                 continue;
             }
             String pf = img.productFormatName();
-            String formatLine = (pf == null || pf.isBlank()) ? "PRODUCT_FORMAT_NAME: \\N" : "PRODUCT_FORMAT_NAME: " + pf;
-            cell.setCellValue(formatLine + "\nLINK: " + img.sourceLink().trim());
+            String sourceLine = (pf == null || pf.isBlank()) ? "SOURCE: \\N" : "SOURCE: " + pf;
+            cell.setCellValue(sourceLine + "\nLINK: " + img.sourceLink().trim());
         }
     }
 
@@ -488,6 +567,11 @@ public class PicsSheetWriter {
             return null;
         }
         return trimmed;
+    }
+
+    private String normalizeOrNullSentinel(String value) {
+        String normalized = normalizeText(value);
+        return normalized == null ? NULL_SENTINEL : normalized;
     }
 
     static final class GroupKey {

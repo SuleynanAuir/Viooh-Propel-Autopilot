@@ -141,8 +141,8 @@ async function loadServerCapabilities() {
     maxUploadLabel.textContent = `Limit ${formatBytes(maxUploadBytes)} per request`;
     const help = document.querySelector('#remote-images-help');
     help.textContent = health.allowRemoteImages
-      ? 'The backend will fetch image URLs from the FRAMEIMAGEPATH column. Local PICS folder upload is not supported.'
-      : 'This deployment has disabled FRAMEIMAGEPATH image fetching. Ask the deployment owner to enable it.';
+      ? 'The backend matches Proposal Country, MARKET, and Venue type tokens against feishu/supply_matrix.xlsx, downloads Pictures links into meta, and inserts them into PICS.'
+      : 'This deployment has disabled external image fetching. Ask the deployment owner to enable it.';
   } catch {
     maxUploadLabel.textContent = 'Service unavailable';
     statusTitle.textContent = 'Export service is unavailable';
@@ -191,7 +191,7 @@ form.addEventListener('submit', event => {
     progressText.textContent = `Uploading ${percentage}%`;
     if (percentage === 100) {
       statusTitle.textContent = 'Server is generating the workbook';
-      statusDetail.textContent = 'Large merges, FRAMEIMAGEPATH image fetching, and Excel formatting may take a few minutes.';
+      statusDetail.textContent = 'Large merges, supply matrix image fetching, and Excel formatting may take a few minutes.';
       progressText.textContent = 'Processing';
       progressBar.style.width = '';
       progressBar.classList.add('indeterminate');

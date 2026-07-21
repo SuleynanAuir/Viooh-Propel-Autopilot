@@ -8,6 +8,8 @@ dist 2
 *.dmg
 *.zip
 *.xlsx
+!feishu/
+!feishu/supply_matrix.xlsx
 *.xls
 *.csv
 *.tsv

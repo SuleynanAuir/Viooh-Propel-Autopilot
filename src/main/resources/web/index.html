@@ -20,7 +20,7 @@
     <section class="hero">
       <p class="eyebrow">VIOOH PLANNING UTILITY</p>
       <h1>Build a proposal workbook from frame lists.</h1>
-      <p class="hero-copy">Upload CSV, TSV, or Excel frame files, merge frame details, fetch PICS images from FRAMEIMAGEPATH, and export the same workbook structure as the desktop tool.</p>
+      <p class="hero-copy">Upload CSV, TSV, or Excel frame files, merge frame details, resolve PICS images from the supply matrix, and export the same workbook structure as the desktop tool.</p>
       <div class="sheet-pills" aria-label="Exported workbook sheets">
         <span>UnfilteredFrames</span><span>FilteredFrames</span><span>Proposal</span><span>PICS</span><span>POI</span>
       </div>
@@ -133,13 +133,13 @@
 
         <details class="option-panel">
           <summary>
-            <span><strong>PICS images</strong><small>Images are fetched only from FRAMEIMAGEPATH.</small></span>
+            <span><strong>PICS images</strong><small>Images are resolved from feishu/supply_matrix.xlsx.</small></span>
             <span class="summary-action">Configure</span>
           </summary>
           <div class="option-content stack">
             <div class="info-box" id="remote-images-row">
-              <strong>FRAMEIMAGEPATH image fetching</strong>
-              <small id="remote-images-help">The backend will fetch image URLs from the FRAMEIMAGEPATH column. Local PICS folder upload is not supported.</small>
+              <strong>Supply matrix image fetching</strong>
+              <small id="remote-images-help">The backend matches Proposal Country, MARKET, and Venue type tokens against feishu/supply_matrix.xlsx, downloads Pictures links into meta, and inserts them into PICS.</small>
             </div>
           </div>
         </details>

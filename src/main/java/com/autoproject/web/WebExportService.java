@@ -46,11 +46,11 @@ final class WebExportService {
         double exchangeRate = exchangeRate(sourceCurrency, targetCurrency, form.first("exchangeRate"));
 
         if (!form.files("picsFiles").isEmpty()) {
-            throw new IllegalArgumentException("PICS images can only be fetched from FRAMEIMAGEPATH. Local PICS uploads are not supported.");
+            throw new IllegalArgumentException("PICS images are resolved from feishu/supply_matrix.xlsx. Local PICS uploads are not supported.");
         }
 
         if (!allowRemoteImages) {
-            throw new IllegalArgumentException("This deployment is not allowed to fetch FRAMEIMAGEPATH images.");
+            throw new IllegalArgumentException("This deployment is not allowed to fetch external PICS images.");
         }
 
         Brief brief = new Brief(location, budget, campaignDays, true, null, Map.of());

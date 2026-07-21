@@ -12,6 +12,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.FileOutputStream;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -85,16 +86,18 @@ public class ExcelGenerator {
         writeHeader(allDataSheet);
         writeHeader(filteredSheet);
         writePoiSheet(poiSheet, list, brief);
+        List<FrameData> filteredFrames = filterFramesForExport(list);
+        var proposalRows = new ProposalBuilder().build(filteredFrames);
         boolean fetchPicsFromLinks = brief == null || brief.isPicsFetchFromLinks();
-        picsSheetWriter.write(
+        picsSheetWriter.writeFromProposalRows(
                 picsSheet,
-                list,
-                brief == null ? null : brief.getLocalPicsRootPath(),
+                proposalRows,
+                supplyMatrixPath(),
+                metaDirFor(outPath),
                 fetchPicsFromLinks,
                 progress);
 
-        List<FrameData> filteredFrames = filterFramesForExport(list);
-        summarySheetWriter.write(summarySheet, new ProposalBuilder().build(filteredFrames), brief);
+        summarySheetWriter.write(summarySheet, proposalRows, brief);
 
         progress.onWritingFrameSheets();
         int allRow = 1;
@@ -122,6 +125,20 @@ public class ExcelGenerator {
         }
         progress.onExportComplete();
         wb.close();
+    }
+
+    private static Path supplyMatrixPath() {
+        String configured = System.getenv("PROPEL_SUPPLY_MATRIX_PATH");
+        if (configured != null && !configured.isBlank()) {
+            return Path.of(configured.trim());
+        }
+        return Path.of("feishu", "supply_matrix.xlsx");
+    }
+
+    private static Path metaDirFor(String outPath) {
+        Path output = Path.of(outPath == null || outPath.isBlank() ? "output.xlsx" : outPath);
+        Path parent = output.toAbsolutePath().getParent();
+        return (parent == null ? Path.of("meta") : parent.resolve("meta")).normalize();
     }
 
     private static void writeHeader(Sheet sheet) {
