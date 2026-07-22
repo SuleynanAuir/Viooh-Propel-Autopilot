@@ -10,6 +10,7 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.util.IOUtils;
+import org.apache.poi.util.Units;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,6 +18,7 @@ import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -136,27 +138,38 @@ public class PicsSheetWriter {
             return;
         }
 
-        List<ProposalSummaryRow> rows = dedupeProposalPicsRows(proposalRows);
-        prog.onStart(rows.size());
+        List<ProposalImageRequest> requests = ProposalImageRequestParser.parse(proposalRows);
+        prog.onStart(requests.size());
         SupplyMatrixImageResolver resolver = fetchFromLinks
                 ? SupplyMatrixImageResolver.load(supplyMatrixPath)
                 : SupplyMatrixImageResolver.load(null);
         HttpClient httpClient = fetchFromLinks && !resolver.isEmpty() ? FrameImageLinkFetcher.newClient() : null;
+        ImageResourceManager resources = new ImageResourceManager(metaDir);
+        try {
+            resources.initialize();
+        } catch (IOException ignored) {
+            // PICS still renders placeholders when the sidecar directory is not writable.
+        }
 
         int rowNum = 1;
         int completed = 0;
-        for (ProposalSummaryRow proposalRow : rows) {
+        for (ProposalImageRequest request : requests) {
             List<FrameImageLinkFetcher.PooledImage> resolved = httpClient == null
                     ? List.of()
-                    : resolver.resolveImages(proposalRow, httpClient, metaDir, MAX_PICK_COUNT);
-            List<FrameImageLinkFetcher.PooledImage> picked = pickRandomPooled(resolved);
+                    : resolver.resolveImages(request, httpClient, resources, MAX_PICK_COUNT);
+            if (httpClient == null) {
+                resources.recordMissing(request);
+            }
+            List<FrameImageLinkFetcher.PooledImage> picked = resolved.isEmpty()
+                    ? List.of(createPlaceholder(request))
+                    : new ArrayList<>(resolved.subList(0, Math.min(MAX_PICK_COUNT, resolved.size())));
             int imageRowIndex = rowNum;
             Row row = picsSheet.createRow(imageRowIndex);
             row.setHeightInPoints(130f);
-            row.createCell(0).setCellValue(normalizeOrNullSentinel(proposalRow.getMarket()));
-            row.createCell(1).setCellValue(normalizeOrNullSentinel(proposalRow.getAddressIso3CountryCode()));
-            row.createCell(2).setCellValue(normalizeOrNullSentinel(proposalRow.getVenueTaxonomyValue()));
-            row.createCell(3).setCellValue(picked.size());
+            row.createCell(0).setCellValue(normalizeOrNullSentinel(request.market()));
+            row.createCell(1).setCellValue(normalizeOrNullSentinel(request.country()));
+            row.createCell(2).setCellValue(normalizeOrNullSentinel(request.venueType()));
+            row.createCell(3).setCellValue(resolved.size());
 
             for (int i = 0; i < picked.size(); i++) {
                 insertPooledImage(picsSheet, imageRowIndex, 4 + i, picked.get(i));
@@ -168,26 +181,11 @@ public class PicsSheetWriter {
                 rowNum = imageRowIndex + 1;
             }
             completed++;
-            prog.onGroupDone(completed, rows.size(), proposalRow.getVenueTaxonomyValue());
+            prog.onGroupDone(completed, requests.size(), request.venueType());
         }
 
+        resources.finish();
         finishColumnSizing(picsSheet);
-    }
-
-    private List<ProposalSummaryRow> dedupeProposalPicsRows(List<ProposalSummaryRow> proposalRows) {
-        Map<String, ProposalSummaryRow> out = new LinkedHashMap<>();
-        for (ProposalSummaryRow row : proposalRows) {
-            String country = normalizeText(row.getAddressIso3CountryCode());
-            String market = normalizeText(row.getMarket());
-            String venueType = normalizeText(row.getVenueTaxonomyValue());
-            if (country == null || market == null || venueType == null) {
-                continue;
-            }
-            out.putIfAbsent(country.toLowerCase(Locale.ROOT)
-                    + "\0" + market.toLowerCase(Locale.ROOT)
-                    + "\0" + venueType.toLowerCase(Locale.ROOT), row);
-        }
-        return new ArrayList<>(out.values());
     }
 
     /**
@@ -215,9 +213,11 @@ public class PicsSheetWriter {
     }
 
     private void finishColumnSizing(Sheet picsSheet) {
-        for (int i = 0; i <= 7; i++) {
-            picsSheet.autoSizeColumn(i);
-        }
+        // Fixed widths are deterministic in both desktop and headless container exports.
+        picsSheet.setColumnWidth(0, 24 * 256);
+        picsSheet.setColumnWidth(1, 16 * 256);
+        picsSheet.setColumnWidth(2, 28 * 256);
+        picsSheet.setColumnWidth(3, 18 * 256);
         picsSheet.setColumnWidth(4, 24 * 256);
         picsSheet.setColumnWidth(5, 24 * 256);
         picsSheet.setColumnWidth(6, 24 * 256);
@@ -474,10 +474,30 @@ public class PicsSheetWriter {
             int pictureIndex = workbook.addPicture(bytes, pictureType);
             Drawing<?> drawing = sheet.createDrawingPatriarch();
             ClientAnchor anchor = workbook.getCreationHelper().createClientAnchor();
+            int[] dimensions = imageDimensions(bytes);
+            int imageWidth = dimensions[0];
+            int imageHeight = dimensions[1];
+            double cellWidth = Math.max(1d, sheet.getColumnWidthInPixels(columnIndex));
+            Row targetRow = sheet.getRow(rowIndex);
+            double cellHeight = Math.max(1d,
+                    (targetRow == null ? sheet.getDefaultRowHeightInPoints() : targetRow.getHeightInPoints()) * 96d / 72d);
+            double padding = 6d;
+            double scale = Math.min(
+                    Math.max(1d, cellWidth - 2d * padding) / imageWidth,
+                    Math.max(1d, cellHeight - 2d * padding) / imageHeight);
+            double renderedWidth = imageWidth * scale;
+            double renderedHeight = imageHeight * scale;
+            int left = (int) Math.round((cellWidth - renderedWidth) / 2d);
+            int top = (int) Math.round((cellHeight - renderedHeight) / 2d);
             anchor.setRow1(rowIndex);
-            anchor.setRow2(rowIndex + 1);
+            anchor.setRow2(rowIndex);
             anchor.setCol1(columnIndex);
-            anchor.setCol2(columnIndex + 1);
+            anchor.setCol2(columnIndex);
+            anchor.setDx1(Units.pixelToEMU(Math.max(0, left)));
+            anchor.setDy1(Units.pixelToEMU(Math.max(0, top)));
+            anchor.setDx2(Units.pixelToEMU(Math.max(1, left + (int) Math.round(renderedWidth))));
+            anchor.setDy2(Units.pixelToEMU(Math.max(1, top + (int) Math.round(renderedHeight))));
+            anchor.setAnchorType(ClientAnchor.AnchorType.MOVE_DONT_RESIZE);
             drawing.createPicture(anchor, pictureIndex);
         } catch (Exception ignored) {
             // skip unreadable / invalid image payloads
@@ -491,6 +511,57 @@ public class PicsSheetWriter {
                 }
             }
         }
+    }
+
+    private static int[] imageDimensions(byte[] bytes) {
+        if (bytes != null && bytes.length >= 24
+                && bytes[0] == (byte) 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
+            return new int[]{Math.max(1, readInt(bytes, 16)), Math.max(1, readInt(bytes, 20))};
+        }
+        if (bytes != null && bytes.length > 4
+                && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8) {
+            int offset = 2;
+            while (offset + 8 < bytes.length) {
+                if ((bytes[offset] & 0xFF) != 0xFF) {
+                    offset++;
+                    continue;
+                }
+                int marker = bytes[offset + 1] & 0xFF;
+                if (marker == 0xD8 || marker == 0xD9) {
+                    offset += 2;
+                    continue;
+                }
+                int length = ((bytes[offset + 2] & 0xFF) << 8) | (bytes[offset + 3] & 0xFF);
+                if (length < 2 || offset + 2 + length > bytes.length) {
+                    break;
+                }
+                if ((marker >= 0xC0 && marker <= 0xC3)
+                        || (marker >= 0xC5 && marker <= 0xC7)
+                        || (marker >= 0xC9 && marker <= 0xCB)
+                        || (marker >= 0xCD && marker <= 0xCF)) {
+                    int height = ((bytes[offset + 5] & 0xFF) << 8) | (bytes[offset + 6] & 0xFF);
+                    int width = ((bytes[offset + 7] & 0xFF) << 8) | (bytes[offset + 8] & 0xFF);
+                    return new int[]{Math.max(1, width), Math.max(1, height)};
+                }
+                offset += 2 + length;
+            }
+        }
+        return new int[]{1, 1};
+    }
+
+    private static int readInt(byte[] bytes, int offset) {
+        return ((bytes[offset] & 0xFF) << 24)
+                | ((bytes[offset + 1] & 0xFF) << 16)
+                | ((bytes[offset + 2] & 0xFF) << 8)
+                | (bytes[offset + 3] & 0xFF);
+    }
+
+    private FrameImageLinkFetcher.PooledImage createPlaceholder(ProposalImageRequest request) {
+        // Static PNG avoids depending on desktop font/graphics services in headless container exports.
+        byte[] bytes = Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nAAAAABJRU5ErkJggg==");
+        return new FrameImageLinkFetcher.PooledImage(
+                bytes, Workbook.PICTURE_TYPE_PNG, null, null, "PLACEHOLDER");
     }
 
     private void writeHeader(Sheet sheet) {

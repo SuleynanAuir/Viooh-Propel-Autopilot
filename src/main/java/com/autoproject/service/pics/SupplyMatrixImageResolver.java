@@ -1,14 +1,13 @@
 package com.autoproject.service.pics;
 
-import com.autoproject.service.summary.ProposalSummaryRow;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Hyperlink;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -25,60 +24,58 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Resolves PICS images from {@code feishu/supply_matrix.xlsx}.
- *
- * <p>The matrix is matched by the cartesian key requested by the web workflow:
- * Proposal Country + Proposal MARKET + each dotted / tokenized Venue type word. The matching matrix columns are
- * Country Code + Media Owner + tokenized Venue Type, and images come from the Pictures hyperlink column.</p>
- */
+/** Matches Proposal image requests against feishu/supply_matrix.xlsx and materializes matching images. */
 final class SupplyMatrixImageResolver {
     private static final int HEADER_SCAN_ROWS = 20;
-    private static final int MAX_LINKS_PER_ROW = 8;
-    private static final int MAX_IMAGE_CANDIDATES_PER_PAGE = 12;
+    private static final int MAX_LINKS_PER_REQUEST = 8;
+    private static final int MAX_IMAGE_CANDIDATES_PER_PAGE = 16;
+    private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s<>\\\"]+");
     private static final Pattern HTML_IMAGE_PATTERN = Pattern.compile(
-            "(?i)(?:property|name)=[\"'](?:og:image|twitter:image)[\"'][^>]*content=[\"']([^\"']+)[\"']"
-                    + "|<img[^>]+src=[\"']([^\"']+)[\"']");
+            "(?i)(?:property|name)=[\\\"'](?:og:image|twitter:image)[\\\"'][^>]*content=[\\\"']([^\\\"']+)[\\\"']"
+                    + "|<img[^>]+(?:src|data-src)=[\\\"']([^\\\"']+)[\\\"']");
+    private static final Map<String, String> COUNTRY_ALIASES = buildCountryAliases();
 
     private final List<Entry> entries;
-    private final Map<LookupKey, List<Entry>> byKey;
-    private final Map<String, List<FrameImageLinkFetcher.PooledImage>> imageCache = new LinkedHashMap<>();
+    private final Map<ExactKey, List<Entry>> exactIndex = new LinkedHashMap<>();
+    private final Map<CountryVenueKey, List<Entry>> countryVenueIndex = new LinkedHashMap<>();
+    private final Map<String, List<Entry>> countryIndex = new LinkedHashMap<>();
+    private final Map<String, List<FrameImageLinkFetcher.PooledImage>> downloadCache = new LinkedHashMap<>();
+    private final Map<String, String> downloadErrors = new LinkedHashMap<>();
 
     private SupplyMatrixImageResolver(List<Entry> entries) {
         this.entries = entries;
-        this.byKey = index(entries);
+        indexEntries();
     }
 
     static SupplyMatrixImageResolver load(Path matrixPath) {
         if (matrixPath == null || !Files.isRegularFile(matrixPath)) {
             return new SupplyMatrixImageResolver(List.of());
         }
+        DataFormatter formatter = new DataFormatter(Locale.ROOT);
         try (InputStream in = Files.newInputStream(matrixPath); Workbook workbook = new XSSFWorkbook(in)) {
             Sheet sheet = workbook.getSheetAt(0);
-            Header header = findHeader(sheet);
+            Header header = findHeader(sheet, formatter);
             if (header == null) {
                 return new SupplyMatrixImageResolver(List.of());
             }
-            List<Entry> out = new ArrayList<>();
+            List<Entry> loaded = new ArrayList<>();
             for (int r = header.rowIndex() + 1; r <= sheet.getLastRowNum(); r++) {
                 Row row = sheet.getRow(r);
                 if (row == null) {
                     continue;
                 }
-                String mediaOwner = text(row.getCell(header.mediaOwnerCol()));
-                String countryCode = text(row.getCell(header.countryCodeCol()));
-                String venueType = text(row.getCell(header.venueTypeCol()));
-                Cell pictureCell = row.getCell(header.picturesCol());
-                String pictureLink = hyperlinkAddress(pictureCell);
-                if (isBlank(pictureLink)) {
-                    pictureLink = firstUrl(text(pictureCell));
-                }
-                if (isBlank(mediaOwner) || isBlank(countryCode) || isBlank(venueType) || isBlank(pictureLink)) {
+                String country = formatter.formatCellValue(row.getCell(header.countryCol())).trim();
+                String market = formatter.formatCellValue(row.getCell(header.marketCol())).trim();
+                String venueType = formatter.formatCellValue(row.getCell(header.venueTypeCol())).trim();
+                List<String> links = links(row.getCell(header.imageLinkCol()), formatter);
+                if (VenueTypeParser.isBlank(country) || VenueTypeParser.isBlank(venueType) || links.isEmpty()) {
                     continue;
                 }
-                out.add(new Entry(mediaOwner.trim(), countryCode.trim(), venueType.trim(), pictureLink.trim()));
+                for (String link : links) {
+                    loaded.add(new Entry(country, market, venueType, link, r + 1));
+                }
             }
-            return new SupplyMatrixImageResolver(out);
+            return new SupplyMatrixImageResolver(loaded);
         } catch (Exception ignored) {
             return new SupplyMatrixImageResolver(List.of());
         }
@@ -88,89 +85,138 @@ final class SupplyMatrixImageResolver {
         return entries.isEmpty();
     }
 
+    int entryCount() {
+        return entries.size();
+    }
+
     List<FrameImageLinkFetcher.PooledImage> resolveImages(
-            ProposalSummaryRow row,
+            ProposalImageRequest request,
             HttpClient httpClient,
-            Path metaDir,
+            ImageResourceManager resources,
             int maxImages) {
-        if (row == null || httpClient == null || metaDir == null || maxImages <= 0 || byKey.isEmpty()) {
+        if (request == null || httpClient == null || resources == null || maxImages <= 0) {
             return List.of();
         }
-        Set<String> countries = tokens(row.getAddressIso3CountryCode());
-        Set<String> markets = Set.of(norm(row.getMarket()));
-        Set<String> venueTokens = venueTokens(row.getVenueTaxonomyValue());
-        if (countries.isEmpty() || markets.isEmpty() || markets.contains("") || venueTokens.isEmpty()) {
+        List<Entry> matches = findMatches(request);
+        if (matches.isEmpty()) {
+            resources.recordMissing(request);
             return List.of();
         }
         LinkedHashSet<String> links = new LinkedHashSet<>();
-        for (String country : countries) {
-            for (String market : markets) {
-                for (String venueToken : venueTokens) {
-                    List<Entry> found = byKey.get(new LookupKey(country, market, venueToken));
-                    if (found == null) {
-                        continue;
-                    }
-                    for (Entry entry : found) {
-                        links.add(entry.pictureLink());
-                        if (links.size() >= MAX_LINKS_PER_ROW) {
-                            break;
-                        }
-                    }
-                    if (links.size() >= MAX_LINKS_PER_ROW) {
-                        break;
-                    }
-                }
-            }
-        }
-        if (links.isEmpty()) {
-            return List.of();
-        }
-        List<FrameImageLinkFetcher.PooledImage> images = new ArrayList<>();
-        for (String link : links) {
-            List<FrameImageLinkFetcher.PooledImage> downloaded =
-                    imageCache.computeIfAbsent(link, l -> downloadFromMatrixLink(l, httpClient, metaDir));
-            for (FrameImageLinkFetcher.PooledImage image : downloaded) {
-                images.add(image.withLinkSource(link, "supply_matrix Pictures"));
-                if (images.size() >= maxImages) {
-                    return images;
-                }
-            }
-        }
-        return images;
-    }
-
-    private List<FrameImageLinkFetcher.PooledImage> downloadFromMatrixLink(String link, HttpClient httpClient, Path metaDir) {
-        List<FrameImageLinkFetcher.PooledImage> out = new ArrayList<>();
-        try {
-            Files.createDirectories(metaDir);
-        } catch (IOException ignored) {
-            return List.of();
-        }
-
-        for (String directCandidate : directDownloadCandidates(link)) {
-            Optional<FrameImageLinkFetcher.PooledImage> direct = FrameImageLinkFetcher.fetchOne(directCandidate, httpClient);
-            if (direct.isPresent()) {
-                savedCopy(direct.get(), directCandidate, metaDir, out);
-                return out;
-            }
-        }
-
-        for (String candidate : pageImageCandidates(link, httpClient)) {
-            Optional<FrameImageLinkFetcher.PooledImage> image = FrameImageLinkFetcher.fetchOne(candidate, httpClient);
-            if (image.isEmpty()) {
-                continue;
-            }
-            savedCopy(image.get(), candidate, metaDir, out);
-            if (out.size() >= PicsSheetWriter.MAX_PICK_COUNT) {
+        for (Entry match : matches) {
+            links.add(match.imageLink());
+            if (links.size() >= MAX_LINKS_PER_REQUEST) {
                 break;
             }
         }
-        return out;
+        List<FrameImageLinkFetcher.PooledImage> result = new ArrayList<>();
+        for (String link : links) {
+            List<FrameImageLinkFetcher.PooledImage> downloaded = downloadCache.computeIfAbsent(
+                    link, value -> downloadFromResourceLink(value, httpClient));
+            if (downloaded.isEmpty()) {
+                resources.recordFailure(link, downloadErrors.getOrDefault(link, "No supported image was found at the resource URL"));
+                continue;
+            }
+            for (FrameImageLinkFetcher.PooledImage image : downloaded) {
+                try {
+                    ImageResourceManager.SavedImage saved = resources.save(
+                            request, link, image.data(), image.pictureType());
+                    result.add(new FrameImageLinkFetcher.PooledImage(
+                            image.data(), image.pictureType(), null, link, "meta/images/" + saved.filename()));
+                } catch (Exception e) {
+                    resources.recordFailure(link, "Could not save image: " + e.getMessage());
+                }
+                if (result.size() >= maxImages) {
+                    return result;
+                }
+            }
+        }
+        if (result.isEmpty()) {
+            resources.recordMissing(request);
+        }
+        return result;
+    }
+
+    private List<Entry> findMatches(ProposalImageRequest request) {
+        String country = normalizeCountry(request.country());
+        String market = VenueTypeParser.normalize(request.market());
+        Set<String> venues = VenueTypeParser.normalizedKeys(request.venueType());
+        if (country.isEmpty() || venues.isEmpty()) {
+            return List.of();
+        }
+        List<Entry> found = lookupExact(country, market, venues);
+        if (!found.isEmpty()) {
+            return found;
+        }
+        found = lookupCountryVenue(country, venues);
+        if (!found.isEmpty()) {
+            return found;
+        }
+        return countryIndex.getOrDefault(country, List.of());
+    }
+
+    private List<Entry> lookupExact(String country, String market, Set<String> venues) {
+        LinkedHashSet<Entry> out = new LinkedHashSet<>();
+        for (String venue : venues) {
+            out.addAll(exactIndex.getOrDefault(new ExactKey(country, market, venue), List.of()));
+        }
+        return new ArrayList<>(out);
+    }
+
+    private List<Entry> lookupCountryVenue(String country, Set<String> venues) {
+        LinkedHashSet<Entry> out = new LinkedHashSet<>();
+        for (String venue : venues) {
+            out.addAll(countryVenueIndex.getOrDefault(new CountryVenueKey(country, venue), List.of()));
+        }
+        return new ArrayList<>(out);
+    }
+
+    private void indexEntries() {
+        for (Entry entry : entries) {
+            String country = normalizeCountry(entry.country());
+            String market = VenueTypeParser.normalize(entry.market());
+            if (country.isEmpty()) {
+                continue;
+            }
+            countryIndex.computeIfAbsent(country, ignored -> new ArrayList<>()).add(entry);
+            for (String venue : VenueTypeParser.normalizedKeys(entry.venueType())) {
+                exactIndex.computeIfAbsent(new ExactKey(country, market, venue), ignored -> new ArrayList<>()).add(entry);
+                countryVenueIndex.computeIfAbsent(
+                        new CountryVenueKey(country, venue), ignored -> new ArrayList<>()).add(entry);
+            }
+        }
+    }
+
+    private List<FrameImageLinkFetcher.PooledImage> downloadFromResourceLink(String link, HttpClient httpClient) {
+        List<String> errors = new ArrayList<>();
+        for (String directCandidate : directDownloadCandidates(link)) {
+            FrameImageLinkFetcher.FetchResult fetched = FrameImageLinkFetcher.fetchOneDetailed(directCandidate, httpClient);
+            if (fetched.image().isPresent()) {
+                return List.of(fetched.image().get());
+            }
+            errors.add(directCandidate + ": " + fetched.error());
+        }
+
+        List<FrameImageLinkFetcher.PooledImage> pageImages = new ArrayList<>();
+        for (String candidate : pageImageCandidates(link, httpClient)) {
+            FrameImageLinkFetcher.FetchResult fetched = FrameImageLinkFetcher.fetchOneDetailed(candidate, httpClient);
+            if (fetched.image().isPresent()) {
+                pageImages.add(fetched.image().get());
+                if (pageImages.size() >= PicsSheetWriter.MAX_PICK_COUNT) {
+                    break;
+                }
+            } else {
+                errors.add(candidate + ": " + fetched.error());
+            }
+        }
+        if (pageImages.isEmpty()) {
+            downloadErrors.put(link, String.join(" | ", errors));
+        }
+        return pageImages;
     }
 
     private static List<String> directDownloadCandidates(String link) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
-        out.add(link);
         Matcher driveFile = Pattern.compile("https?://drive\\.google\\.com/file/d/([^/?#]+)", Pattern.CASE_INSENSITIVE)
                 .matcher(link);
         if (driveFile.find()) {
@@ -180,27 +226,8 @@ final class SupplyMatrixImageResolver {
         if (link.toLowerCase(Locale.ROOT).contains("drive.google.com") && openId.find()) {
             out.add("https://drive.google.com/uc?export=download&id=" + openId.group(1));
         }
+        out.add(link);
         return new ArrayList<>(out);
-    }
-
-    private static void savedCopy(
-            FrameImageLinkFetcher.PooledImage image,
-            String sourceLink,
-            Path metaDir,
-            List<FrameImageLinkFetcher.PooledImage> out) {
-        byte[] data = image.data();
-        if (data == null || data.length == 0) {
-            return;
-        }
-        String extension = image.pictureType() == org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_PNG ? ".png" : ".jpg";
-        String base = Integer.toHexString(sourceLink.hashCode()) + "-" + out.size() + extension;
-        Path target = metaDir.resolve(base);
-        try {
-            Files.write(target, data);
-            out.add(new FrameImageLinkFetcher.PooledImage(data, image.pictureType(), null, sourceLink, "meta/" + base));
-        } catch (IOException ignored) {
-            // skip unsaved image
-        }
     }
 
     private static List<String> pageImageCandidates(String link, HttpClient httpClient) {
@@ -215,15 +242,16 @@ final class SupplyMatrixImageResolver {
             return List.of();
         }
         LinkedHashSet<String> out = new LinkedHashSet<>();
-        Matcher matcher = HTML_IMAGE_PATTERN.matcher(html);
+        Matcher matcher = HTML_IMAGE_PATTERN.matcher(html.replace("&amp;", "&"));
         while (matcher.find()) {
             String raw = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
-            if (isBlank(raw)) {
+            if (raw == null || raw.isBlank() || raw.startsWith("data:")) {
                 continue;
             }
-            String resolved = resolveUrl(base, raw.trim());
-            if (!isBlank(resolved)) {
-                out.add(resolved);
+            try {
+                out.add(raw.startsWith("//") ? base.getScheme() + ":" + raw : base.resolve(raw).toString());
+            } catch (Exception ignored) {
+                // continue with the remaining page candidates
             }
             if (out.size() >= MAX_IMAGE_CANDIDATES_PER_PAGE) {
                 break;
@@ -232,129 +260,90 @@ final class SupplyMatrixImageResolver {
         return new ArrayList<>(out);
     }
 
-    private static String resolveUrl(URI base, String raw) {
-        try {
-            if (raw.startsWith("//")) {
-                return base.getScheme() + ":" + raw;
-            }
-            return base.resolve(raw).toString();
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private static Map<LookupKey, List<Entry>> index(List<Entry> entries) {
-        Map<LookupKey, List<Entry>> out = new LinkedHashMap<>();
-        for (Entry entry : entries) {
-            String country = norm(entry.countryCode());
-            String market = norm(entry.mediaOwner());
-            for (String venueToken : venueTokens(entry.venueType())) {
-                out.computeIfAbsent(new LookupKey(country, market, venueToken), ignored -> new ArrayList<>()).add(entry);
-            }
-        }
-        return out;
-    }
-
-    private static Header findHeader(Sheet sheet) {
+    private static Header findHeader(Sheet sheet, DataFormatter formatter) {
         for (int r = 0; r <= Math.min(sheet.getLastRowNum(), HEADER_SCAN_ROWS); r++) {
             Row row = sheet.getRow(r);
             if (row == null) {
                 continue;
             }
-            Map<String, Integer> cols = new LinkedHashMap<>();
+            Map<String, Integer> columns = new LinkedHashMap<>();
             for (Cell cell : row) {
-                String value = norm(text(cell));
-                if (!value.isEmpty()) {
-                    cols.put(value, cell.getColumnIndex());
+                String key = VenueTypeParser.normalize(formatter.formatCellValue(cell));
+                if (!key.isEmpty()) {
+                    columns.putIfAbsent(key, cell.getColumnIndex());
                 }
             }
-            Integer mediaOwner = cols.get("mediaowner");
-            Integer countryCode = cols.get("countrycode");
-            Integer venueType = cols.get("venuetype");
-            Integer pictures = cols.get("pictures");
-            if (mediaOwner != null && countryCode != null && venueType != null && pictures != null) {
-                return new Header(r, mediaOwner, countryCode, venueType, pictures);
+            Integer country = firstColumn(columns, "country", "countrycode", "addressiso3countrycode");
+            Integer market = firstColumn(columns, "market", "mediaowner");
+            Integer venue = firstColumn(columns, "venuetype", "venuetaxonomyvalue");
+            // Prefer the curated Feishu column; Pictures remains a backwards-compatible fallback.
+            Integer link = firstColumn(columns, "飞书图片link", "feishutupianlink", "pictures", "picturelink1");
+            if (country != null && market != null && venue != null && link != null) {
+                return new Header(r, country, market, venue, link);
             }
         }
         return null;
     }
 
-    private static String hyperlinkAddress(Cell cell) {
-        if (cell == null) {
-            return null;
+    private static Integer firstColumn(Map<String, Integer> columns, String... aliases) {
+        for (String alias : aliases) {
+            Integer column = columns.get(VenueTypeParser.normalize(alias));
+            if (column != null) {
+                return column;
+            }
         }
+        return null;
+    }
+
+    private static List<String> links(Cell cell, DataFormatter formatter) {
+        if (cell == null) {
+            return List.of();
+        }
+        LinkedHashSet<String> out = new LinkedHashSet<>();
         Hyperlink hyperlink = cell.getHyperlink();
-        return hyperlink == null ? null : hyperlink.getAddress();
+        if (hyperlink != null && hyperlink.getAddress() != null && !hyperlink.getAddress().isBlank()) {
+            out.add(hyperlink.getAddress().trim());
+        }
+        Matcher matcher = URL_PATTERN.matcher(formatter.formatCellValue(cell));
+        while (matcher.find()) {
+            out.add(matcher.group().replaceAll("[),.;]+$", ""));
+        }
+        return new ArrayList<>(out);
     }
 
-    private static String firstUrl(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        Matcher matcher = Pattern.compile("https?://\\S+").matcher(raw);
-        return matcher.find() ? matcher.group() : null;
+    private static String normalizeCountry(String raw) {
+        String normalized = VenueTypeParser.normalize(raw);
+        return COUNTRY_ALIASES.getOrDefault(normalized, normalized);
     }
 
-    private static String text(Cell cell) {
-        if (cell == null) {
-            return null;
-        }
-        return switch (cell.getCellType()) {
-            case STRING -> cell.getStringCellValue();
-            case NUMERIC -> String.valueOf((long) cell.getNumericCellValue());
-            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            case FORMULA -> cell.getCellFormula();
-            default -> null;
-        };
-    }
-
-    private static Set<String> venueTokens(String raw) {
-        LinkedHashSet<String> out = new LinkedHashSet<>();
-        if (isBlank(raw)) {
-            return out;
-        }
-        for (String dotPart : raw.split("\\.")) {
-            String normalizedPart = norm(dotPart);
-            if (!normalizedPart.isEmpty()) {
-                out.add(normalizedPart);
-            }
-            out.addAll(tokens(dotPart));
-        }
-        out.addAll(tokens(raw));
-        return out;
-    }
-
-    private static Set<String> tokens(String raw) {
-        LinkedHashSet<String> out = new LinkedHashSet<>();
-        if (isBlank(raw)) {
-            return out;
-        }
-        for (String part : raw.split("[^\\p{Alnum}]+")) {
-            String normalized = norm(part);
-            if (!normalized.isEmpty()) {
-                out.add(normalized);
+    private static Map<String, String> buildCountryAliases() {
+        Map<String, String> aliases = new LinkedHashMap<>();
+        for (String alpha2 : Locale.getISOCountries()) {
+            Locale locale = Locale.of("", alpha2);
+            try {
+                String iso3 = locale.getISO3Country().toLowerCase(Locale.ROOT);
+                aliases.put(VenueTypeParser.normalize(alpha2), iso3);
+                aliases.put(VenueTypeParser.normalize(iso3), iso3);
+                aliases.put(VenueTypeParser.normalize(locale.getDisplayCountry(Locale.ENGLISH)), iso3);
+            } catch (Exception ignored) {
+                // skip incomplete locale records
             }
         }
-        return out;
+        aliases.put("uk", "gbr");
+        aliases.put("usa", "usa");
+        aliases.put("unitedstates", "usa");
+        return aliases;
     }
 
-    private static String norm(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.trim().toLowerCase(Locale.ROOT).replaceAll("[^\\p{Alnum}]+", "");
+    private record Header(int rowIndex, int countryCol, int marketCol, int venueTypeCol, int imageLinkCol) {
     }
 
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank() || value.trim().equalsIgnoreCase("null") || value.trim().equals("\\N");
+    private record Entry(String country, String market, String venueType, String imageLink, int matrixRow) {
     }
 
-    private record Header(int rowIndex, int mediaOwnerCol, int countryCodeCol, int venueTypeCol, int picturesCol) {
+    private record ExactKey(String country, String market, String venue) {
     }
 
-    private record Entry(String mediaOwner, String countryCode, String venueType, String pictureLink) {
-    }
-
-    private record LookupKey(String country, String market, String venueToken) {
+    private record CountryVenueKey(String country, String venue) {
     }
 }

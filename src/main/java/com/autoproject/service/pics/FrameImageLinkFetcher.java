@@ -1,6 +1,9 @@
 package com.autoproject.service.pics;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -105,14 +108,21 @@ final class FrameImageLinkFetcher {
     }
 
     static Optional<PooledImage> fetchOne(String link, HttpClient httpClient) {
+        return fetchOneDetailed(link, httpClient).image();
+    }
+
+    static FetchResult fetchOneDetailed(String link, HttpClient httpClient) {
+        if (link == null) {
+            return FetchResult.failure("URL is null");
+        }
         String t = link.trim();
         if (t.isEmpty()) {
-            return Optional.empty();
+            return FetchResult.failure("URL is blank");
         }
         if (t.regionMatches(true, 0, "http://", 0, 7) || t.regionMatches(true, 0, "https://", 0, 8)) {
             return fetchHttp(t, httpClient);
         }
-        return Optional.empty();
+        return FetchResult.failure("Only HTTP(S) image URLs are supported");
     }
 
     private static Optional<PooledImage> readLocalFileToPooled(URI fileUri) {
@@ -158,7 +168,7 @@ final class FrameImageLinkFetcher {
         }
     }
 
-    private static Optional<PooledImage> fetchHttp(String url, HttpClient client) {
+    private static FetchResult fetchHttp(String url, HttpClient client) {
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                     .timeout(HTTP_TIMEOUT)
@@ -167,25 +177,50 @@ final class FrameImageLinkFetcher {
                     .build();
             HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() / 100 != 2) {
-                return Optional.empty();
+                return FetchResult.failure("HTTP " + response.statusCode());
             }
             String contentType = response.headers().firstValue("Content-Type").orElse("");
             try (InputStream in = response.body()) {
                 byte[] bytes = readCapped(in, MAX_BODY_BYTES);
-                if (bytes == null || !looksLikeImage(bytes)) {
-                    return Optional.empty();
+                if (bytes == null) {
+                    return FetchResult.failure("Image exceeds " + MAX_BODY_BYTES + " bytes");
+                }
+                if (looksLikeWebp(bytes)) {
+                    bytes = convertWebpToPng(bytes);
+                    if (bytes == null) {
+                        return FetchResult.failure("WebP decoder could not convert the image to PNG");
+                    }
+                    return FetchResult.success(new PooledImage(
+                            bytes, org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_PNG, null, null, null));
+                }
+                if (!looksLikeImage(bytes)) {
+                    return FetchResult.failure("Response is not a supported JPG, JPEG, PNG, or WebP image");
                 }
                 int type = pictureTypeFromContentTypeOrPath(contentType, url);
                 if (type < 0) {
                     type = pictureTypeFromMagic(bytes);
                 }
                 if (type < 0) {
-                    return Optional.empty();
+                    return FetchResult.failure("Image format could not be detected");
                 }
-                return Optional.of(new PooledImage(bytes, type, null, null, null));
+                return FetchResult.success(new PooledImage(bytes, type, null, null, null));
             }
-        } catch (Exception ignored) {
-            return Optional.empty();
+        } catch (Exception e) {
+            String message = e.getMessage();
+            return FetchResult.failure(e.getClass().getSimpleName() + (message == null ? "" : ": " + message));
+        }
+    }
+
+    private static byte[] convertWebpToPng(byte[] webp) {
+        try {
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(webp));
+            if (image == null) {
+                return null;
+            }
+            ByteArrayOutputStream png = new ByteArrayOutputStream();
+            return ImageIO.write(image, "png", png) ? png.toByteArray() : null;
+        } catch (IOException ignored) {
+            return null;
         }
     }
 
@@ -246,6 +281,13 @@ final class FrameImageLinkFetcher {
         return pictureTypeFromMagic(bytes) >= 0;
     }
 
+    private static boolean looksLikeWebp(byte[] bytes) {
+        return bytes != null
+                && bytes.length >= 12
+                && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
+                && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P';
+    }
+
     /** @return bytes read, or {@code null} if body exceeds {@code maxBytes} */
     private static byte[] readCapped(InputStream in, int maxBytes) throws IOException {
         ByteArrayOutputStream buf = new ByteArrayOutputStream(Math.min(maxBytes, 65_536));
@@ -288,6 +330,16 @@ final class FrameImageLinkFetcher {
         /** True when this image was obtained from a parsed link / URL field (not local folder scan). */
         boolean fromLinkField() {
             return sourceLink != null && !sourceLink.isBlank();
+        }
+    }
+
+    record FetchResult(Optional<PooledImage> image, String error) {
+        static FetchResult success(PooledImage image) {
+            return new FetchResult(Optional.of(image), null);
+        }
+
+        static FetchResult failure(String error) {
+            return new FetchResult(Optional.empty(), error);
         }
     }
 }
