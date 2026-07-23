@@ -29,10 +29,16 @@ final class VenueTypeParser {
     static Set<String> normalizedKeys(String raw) {
         LinkedHashSet<String> keys = new LinkedHashSet<>();
         for (String display : splitDisplayValues(raw)) {
-            addKeyVariants(keys, normalize(display));
+            String key = normalize(display);
+            if (!key.isEmpty()) {
+                keys.add(key);
+            }
         }
         if (!isBlank(raw)) {
-            addKeyVariants(keys, normalize(raw));
+            String key = normalize(raw);
+            if (!key.isEmpty()) {
+                keys.add(key);
+            }
         }
         return keys;
     }
@@ -54,20 +60,6 @@ final class VenueTypeParser {
                 .replaceAll("\\p{M}+", "");
         String token = ascii.replaceAll("[^\\p{L}\\p{N}]+", "_").replaceAll("^_+|_+$", "");
         return token.isEmpty() ? "unknown" : token;
-    }
-
-    private static void addKeyVariants(Set<String> keys, String key) {
-        if (key.isEmpty()) {
-            return;
-        }
-        keys.add(key);
-        if (key.endsWith("ies") && key.length() > 4) {
-            keys.add(key.substring(0, key.length() - 3) + "y");
-        } else if (key.endsWith("ses") && key.length() > 4) {
-            keys.add(key.substring(0, key.length() - 2));
-        } else if (key.endsWith("s") && !key.endsWith("ss") && key.length() > 3) {
-            keys.add(key.substring(0, key.length() - 1));
-        }
     }
 
     private static String cleanDisplay(String value) {

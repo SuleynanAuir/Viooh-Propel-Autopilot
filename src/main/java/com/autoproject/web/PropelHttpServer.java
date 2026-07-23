@@ -1,5 +1,6 @@
 package com.autoproject.web;
 
+import com.autoproject.service.pics.FeishuDriveClient;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -61,7 +62,8 @@ final class PropelHttpServer {
             return;
         }
         String body = "{\"status\":\"ok\",\"maxUploadBytes\":" + maxUploadBytes
-                + ",\"allowRemoteImages\":" + allowRemoteImages + "}";
+                + ",\"allowRemoteImages\":" + allowRemoteImages
+                + ",\"feishuAuthConfigured\":" + FeishuDriveClient.isAuthenticationConfigured() + "}";
         sendJson(exchange, 200, body);
     }
 

@@ -185,30 +185,34 @@ final class FrameImageLinkFetcher {
                 if (bytes == null) {
                     return FetchResult.failure("Image exceeds " + MAX_BODY_BYTES + " bytes");
                 }
-                if (looksLikeWebp(bytes)) {
-                    bytes = convertWebpToPng(bytes);
-                    if (bytes == null) {
-                        return FetchResult.failure("WebP decoder could not convert the image to PNG");
-                    }
-                    return FetchResult.success(new PooledImage(
-                            bytes, org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_PNG, null, null, null));
-                }
-                if (!looksLikeImage(bytes)) {
-                    return FetchResult.failure("Response is not a supported JPG, JPEG, PNG, or WebP image");
-                }
-                int type = pictureTypeFromContentTypeOrPath(contentType, url);
-                if (type < 0) {
-                    type = pictureTypeFromMagic(bytes);
-                }
-                if (type < 0) {
-                    return FetchResult.failure("Image format could not be detected");
-                }
-                return FetchResult.success(new PooledImage(bytes, type, null, null, null));
+                return decodeImageBytes(bytes, contentType, url);
             }
         } catch (Exception e) {
             String message = e.getMessage();
             return FetchResult.failure(e.getClass().getSimpleName() + (message == null ? "" : ": " + message));
         }
+    }
+
+    static FetchResult decodeImageBytes(byte[] bytes, String contentType, String sourceHint) {
+        if (looksLikeWebp(bytes)) {
+            byte[] png = convertWebpToPng(bytes);
+            if (png == null) {
+                return FetchResult.failure("WebP decoder could not convert the image to PNG");
+            }
+            return FetchResult.success(new PooledImage(
+                    png, org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_PNG, null, null, null));
+        }
+        if (!looksLikeImage(bytes)) {
+            return FetchResult.failure("Response is not a supported JPG, JPEG, PNG, or WebP image");
+        }
+        int type = pictureTypeFromContentTypeOrPath(contentType == null ? "" : contentType, sourceHint);
+        if (type < 0) {
+            type = pictureTypeFromMagic(bytes);
+        }
+        if (type < 0) {
+            return FetchResult.failure("Image format could not be detected");
+        }
+        return FetchResult.success(new PooledImage(bytes, type, null, null, null));
     }
 
     private static byte[] convertWebpToPng(byte[] webp) {

@@ -89,6 +89,25 @@ final class SupplyMatrixImageResolver {
         return entries.size();
     }
 
+    /**
+     * Returns the curated supply-matrix resource links for a Proposal request, even when those links cannot be
+     * downloaded as anonymous image URLs. This lets PICS preserve the source link instead of silently leaving its
+     * Image columns empty when a Feishu folder requires authentication.
+     */
+    List<String> resolveImageLinks(ProposalImageRequest request, int maxLinks) {
+        if (request == null || maxLinks <= 0) {
+            return List.of();
+        }
+        LinkedHashSet<String> links = new LinkedHashSet<>();
+        for (Entry match : findMatches(request)) {
+            links.add(match.imageLink());
+            if (links.size() >= maxLinks) {
+                break;
+            }
+        }
+        return new ArrayList<>(links);
+    }
+
     List<FrameImageLinkFetcher.PooledImage> resolveImages(
             ProposalImageRequest request,
             HttpClient httpClient,
@@ -97,17 +116,10 @@ final class SupplyMatrixImageResolver {
         if (request == null || httpClient == null || resources == null || maxImages <= 0) {
             return List.of();
         }
-        List<Entry> matches = findMatches(request);
-        if (matches.isEmpty()) {
+        List<String> links = resolveImageLinks(request, MAX_LINKS_PER_REQUEST);
+        if (links.isEmpty()) {
             resources.recordMissing(request);
             return List.of();
-        }
-        LinkedHashSet<String> links = new LinkedHashSet<>();
-        for (Entry match : matches) {
-            links.add(match.imageLink());
-            if (links.size() >= MAX_LINKS_PER_REQUEST) {
-                break;
-            }
         }
         List<FrameImageLinkFetcher.PooledImage> result = new ArrayList<>();
         for (String link : links) {
@@ -188,6 +200,14 @@ final class SupplyMatrixImageResolver {
     }
 
     private List<FrameImageLinkFetcher.PooledImage> downloadFromResourceLink(String link, HttpClient httpClient) {
+        if (FeishuDriveClient.isFeishuFolderLink(link)) {
+            FeishuDriveClient.FolderFetchResult fetched = FeishuDriveClient.fetchFolderImages(
+                    link, httpClient, PicsSheetWriter.MAX_PICK_COUNT);
+            if (fetched.images().isEmpty()) {
+                downloadErrors.put(link, fetched.error());
+            }
+            return fetched.images();
+        }
         List<String> errors = new ArrayList<>();
         for (String directCandidate : directDownloadCandidates(link)) {
             FrameImageLinkFetcher.FetchResult fetched = FrameImageLinkFetcher.fetchOneDetailed(directCandidate, httpClient);

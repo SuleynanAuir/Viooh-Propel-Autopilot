@@ -12,6 +12,8 @@ dist 2
 !feishu/supply_matrix.xlsx
 *.xls
 *.csv
+!config/
+!config/venue_type_dictionary.csv
 *.tsv
 *.docx
 *.log

@@ -26,6 +26,9 @@ let maxUploadBytes = Infinity;
 let saveFileHandle = null;
 let exportServiceAvailable = false;
 let exportInProgress = false;
+let healthRetryTimer = null;
+let healthAttempt = 0;
+const MAX_AUTOMATIC_HEALTH_ATTEMPTS = 6;
 
 function fileKey(file) {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -202,35 +205,77 @@ for (const radio of document.querySelectorAll('input[name="photographyMode"]')) 
   });
 }
 
-async function loadServerCapabilities() {
+async function loadServerCapabilities(manualRetry = false) {
+  if (healthRetryTimer) {
+    clearTimeout(healthRetryTimer);
+    healthRetryTimer = null;
+  }
+  if (manualRetry) healthAttempt = 0;
+  healthAttempt += 1;
+  submitButton.type = 'submit';
+  submitButton.disabled = true;
+  document.querySelector('.button-label').textContent = 'Connecting...';
+  statusTitle.textContent = 'Connecting to export service';
+  statusDetail.textContent = 'Checking the Java export backend. A sleeping Cloudflare Container may take a moment to start.';
   try {
-    const response = await fetch('/api/health', { cache: 'no-store' });
-    if (!response.ok) throw new Error('health check failed');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    const response = await fetch('/api/health', { cache: 'no-store', signal: controller.signal });
+    clearTimeout(timeout);
+    if (!response.ok) throw new Error(`health check failed (${response.status})`);
     const health = await response.json();
     exportServiceAvailable = true;
     exportInProgress = false;
+    healthAttempt = 0;
+    submitButton.type = 'submit';
     submitButton.disabled = false;
+    document.querySelector('.button-label').textContent = 'Generate Excel';
     progressWrap.hidden = true;
+    progressText.textContent = 'Ready';
+    statusTitle.textContent = 'Export service is ready';
+    statusDetail.textContent = 'Upload the frame files and generate the workbook with the original Propel Java workflow.';
     maxUploadBytes = health.maxUploadBytes;
     maxUploadLabel.textContent = `Limit ${formatBytes(maxUploadBytes)} per request`;
     const help = document.querySelector('#remote-images-help');
-    help.textContent = health.allowRemoteImages
-      ? 'The backend matches Proposal Country, MARKET, and Venue type tokens against feishu/supply_matrix.xlsx, downloads Pictures links into meta, and inserts them into PICS.'
-      : 'This deployment has disabled external image fetching. Ask the deployment owner to enable it.';
+    if (!health.allowRemoteImages) {
+      help.textContent = 'This deployment has disabled external image fetching. Ask the deployment owner to enable it.';
+    } else if (health.feishuAuthConfigured) {
+      help.textContent = 'Feishu authentication is configured. The backend matches the supply matrix, downloads folder images into meta/images, and embeds them in PICS.';
+    } else {
+      help.textContent = 'Supply links will be written into PICS, but Feishu image downloading needs PROPEL_FEISHU_ACCESS_TOKEN or the Feishu app credentials on the backend.';
+    }
   } catch {
     exportServiceAvailable = false;
     exportInProgress = false;
-    submitButton.disabled = true;
     progressWrap.hidden = true;
     progressBar.classList.remove('indeterminate');
     progressBar.style.width = '0';
     progressText.textContent = 'Unavailable';
-    document.querySelector('.button-label').textContent = 'Service unavailable';
-    maxUploadLabel.textContent = 'Service unavailable';
+    if (healthAttempt < MAX_AUTOMATIC_HEALTH_ATTEMPTS) {
+      const seconds = 5;
+      submitButton.disabled = true;
+      document.querySelector('.button-label').textContent = 'Connecting...';
+      maxUploadLabel.textContent = 'Starting export service';
+      statusTitle.textContent = 'Java export service is starting';
+      statusDetail.textContent = `Retrying automatically in ${seconds} seconds (${healthAttempt}/${MAX_AUTOMATIC_HEALTH_ATTEMPTS}).`;
+      healthRetryTimer = setTimeout(() => loadServerCapabilities(), seconds * 1000);
+      return;
+    }
+    submitButton.type = 'button';
+    submitButton.disabled = false;
+    document.querySelector('.button-label').textContent = 'Retry connection';
+    maxUploadLabel.textContent = 'Backend not connected';
     statusTitle.textContent = 'Export service is unavailable';
-    statusDetail.textContent = 'The page is not connected to the Java export backend. Deploy with Cloudflare Workers + Containers, not static Pages only.';
+    statusDetail.textContent = 'Retry the connection. If it still fails, open the Workers deployment URL: a static Cloudflare Pages deployment cannot run the Java export backend.';
   }
 }
+
+submitButton.addEventListener('click', event => {
+  if (!exportServiceAvailable && submitButton.type === 'button') {
+    event.preventDefault();
+    loadServerCapabilities(true);
+  }
+});
 
 form.addEventListener('submit', event => {
   event.preventDefault();

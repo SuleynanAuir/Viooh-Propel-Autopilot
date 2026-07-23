@@ -3,6 +3,7 @@ WORKDIR /build
 COPY pom.xml ./
 RUN mvn -B -DskipTests dependency:go-offline
 COPY src ./src
+COPY config ./config
 RUN mvn -B -DskipTests package
 
 FROM eclipse-temurin:21-jre
@@ -10,6 +11,7 @@ RUN groupadd --system propel && useradd --system --gid propel --home-dir /app pr
 WORKDIR /app
 COPY --from=build /build/target/Auto_project-1.0-SNAPSHOT.jar /app/propel.jar
 COPY feishu/supply_matrix.xlsx /app/feishu/supply_matrix.xlsx
+COPY --from=build /build/config/venue_type_dictionary.csv /app/config/venue_type_dictionary.csv
 ENV PORT=8080 \
     PROPEL_MAX_UPLOAD_BYTES=262144000 \
     PROPEL_MAX_CONCURRENT_EXPORTS=1 \

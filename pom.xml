@@ -52,6 +52,14 @@
                     <include>autoproject-build.properties</include>
                 </includes>
             </resource>
+            <resource>
+                <directory>config</directory>
+                <targetPath>config</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>venue_type_dictionary.csv</include>
+                </includes>
+            </resource>
         </resources>
         <plugins>
             <plugin>

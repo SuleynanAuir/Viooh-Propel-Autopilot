@@ -71,6 +71,17 @@ npx wrangler deploy
 viooh-propel-autopilot
 ```
 
+在该 Worker 的 `Settings > Build` 中使用以下设置；不要填写 Pages 的 `Build output directory`：
+
+| 设置 | 值 |
+| --- | --- |
+| Root directory | `/` |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+| Production branch | `main` |
+
+部署完成后应当访问 Worker 的 `*.workers.dev` 地址或绑定到这个 Worker 的 Custom Domain。原来的 `*.pages.dev` 地址仍然只是静态页面，不会自动获得 Java Container。
+
 构建日志中如果仍然出现 `config file is using the Worker name "propel-web"`，说明 Cloudflare 正在构建旧提交；把包含 `wrangler.jsonc` 修改的提交推送到 GitHub 后重新部署。
 
 如果 Maven 与 Docker 镜像都已经 `BUILD SUCCESS`，最后失败为：
@@ -119,6 +130,44 @@ Java 服务自身默认接受 250 MiB，可通过 `PROPEL_MAX_UPLOAD_BYTES` 调�
 | `PROPEL_MAX_CONCURRENT_EXPORTS` | `1` | 单 Container 同时生成的工作簿数量 |
 | `PROPEL_ALLOW_REMOTE_IMAGES` | `true` | 是否允许从 supply matrix Pictures 链接下载 PICS 图片 |
 | `PROPEL_SUPPLY_MATRIX_PATH` | `feishu/supply_matrix.xlsx` | supply matrix 文件路径 |
+| `PROPEL_VENUE_TYPE_DICTIONARY_PATH` | `config/venue_type_dictionary.csv` | PICS Venue Type 标准白名单文件路径 |
+| `PROPEL_FEISHU_ACCESS_TOKEN` | 空 | 飞书 `user_access_token` 或 `tenant_access_token`；用于列出文件夹并下载图片 |
+| `PROPEL_FEISHU_APP_ID` | 空 | 飞书自建应用 App ID；与 App Secret 同时配置时，后端自动获取并缓存 tenant token |
+| `PROPEL_FEISHU_APP_SECRET` | 空 | 飞书自建应用 App Secret；仅作为 Worker Secret 配置，不写入仓库 |
+| `PROPEL_FEISHU_MAX_FOLDER_DEPTH` | `2` | 在飞书图片文件夹内递归查找子文件夹的最大层数，范围 0–8 |
+
+### 飞书图片鉴权
+
+`飞书图片link` 当前是受保护的飞书 Drive 文件夹。未登录请求会被重定向到登录页，因此仅获得文件夹链接并不能取得真实图片。后端使用飞书 Drive Open API 完成以下流程：
+
+```text
+folder link -> folder_token -> Drive file list -> image file_token -> authenticated download
+            -> meta/images -> image_mapping.json -> embedded PICS image
+```
+
+推荐创建飞书自建应用，启用云空间文件读取/下载权限，并将供应图片文件夹共享给该应用。然后把凭证配置为 Cloudflare Worker Secrets：
+
+```bash
+npx wrangler secret put PROPEL_FEISHU_APP_ID
+npx wrangler secret put PROPEL_FEISHU_APP_SECRET
+npm run deploy
+```
+
+也可以直接配置已有的 `user_access_token` 或 `tenant_access_token`：
+
+```bash
+npx wrangler secret put PROPEL_FEISHU_ACCESS_TOKEN
+npm run deploy
+```
+
+直接 Access Token 过期后需要更新；App ID + App Secret 模式会由 Java 后端自动刷新 tenant token。Cloudflare Worker 会把 Secret 作为环境变量传入 Java Container，健康检查只返回 `feishuAuthConfigured` 布尔值，不会返回凭证内容。
+
+本地 Java 测试示例：
+
+```bash
+export PROPEL_FEISHU_ACCESS_TOKEN='你的访问凭证'
+java -cp target/Auto_project-1.0-SNAPSHOT.jar com.autoproject.web.WebMain
+```
 
 公网部署当前为了 PICS 功能默认开启外部图片抓取。只应处理可信输入，并在后续增加域名白名单；否则远程 URL 会带来 SSRF 风险。
 

@@ -13,17 +13,29 @@ final class ProposalImageRequestParser {
     }
 
     static List<ProposalImageRequest> parse(List<ProposalSummaryRow> proposalRows) {
+        return parse(proposalRows, VenueTypeDictionary.loadConfigured()).requests();
+    }
+
+    static ParseResult parse(List<ProposalSummaryRow> proposalRows, VenueTypeDictionary dictionary) {
         if (proposalRows == null || proposalRows.isEmpty()) {
-            return List.of();
+            return new ParseResult(List.of(), List.of());
         }
+        VenueTypeDictionary activeDictionary = dictionary == null
+                ? VenueTypeDictionary.loadConfigured()
+                : dictionary;
         Map<String, ProposalImageRequest> unique = new LinkedHashMap<>();
+        Map<String, VenueTypeDictionary.MissingVenueType> missing = new LinkedHashMap<>();
         for (int i = 0; i < proposalRows.size(); i++) {
             ProposalSummaryRow row = proposalRows.get(i);
             if (row == null || VenueTypeParser.isBlank(row.getAddressIso3CountryCode())
                     || VenueTypeParser.isBlank(row.getMarket())) {
                 continue;
             }
-            for (String venue : VenueTypeParser.splitDisplayValues(row.getVenueTaxonomyValue())) {
+            VenueTypeDictionary.MatchResult match = activeDictionary.match(row.getVenueTaxonomyValue());
+            for (VenueTypeDictionary.MissingVenueType item : match.missingVenueTypes()) {
+                missing.putIfAbsent(item.original() + "\0" + item.normalized(), item);
+            }
+            for (String venue : match.standardVenueTypes()) {
                 ProposalImageRequest request = new ProposalImageRequest(
                         row.getAddressIso3CountryCode().trim(),
                         row.getMarket().trim(),
@@ -35,6 +47,11 @@ final class ProposalImageRequestParser {
                 unique.putIfAbsent(key, request);
             }
         }
-        return new ArrayList<>(unique.values());
+        return new ParseResult(new ArrayList<>(unique.values()), new ArrayList<>(missing.values()));
+    }
+
+    record ParseResult(
+            List<ProposalImageRequest> requests,
+            List<VenueTypeDictionary.MissingVenueType> missingVenueTypes) {
     }
 }

@@ -5,6 +5,9 @@ node_modules/
 target/
 *.iml
 npm-debug.log*
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 
 # Rebuildable desktop/package output
 /dist/
@@ -21,3 +24,4 @@ npm-debug.log*
 /audit_log.txt
 /propel_error.log
 /~$*
+/**/.~*

@@ -19,6 +19,7 @@ final class ImageResourceManager {
     private final Path imagesDir;
     private final Map<String, Mapping> mappings = new LinkedHashMap<>();
     private final List<ProposalImageRequest> missing = new ArrayList<>();
+    private final Map<String, VenueTypeDictionary.MissingVenueType> missingVenueTypes = new LinkedHashMap<>();
     private final Map<String, Integer> counters = new LinkedHashMap<>();
 
     ImageResourceManager(Path metaDir) {
@@ -52,6 +53,18 @@ final class ImageResourceManager {
         missing.add(request);
     }
 
+    void recordMissingVenueTypes(List<VenueTypeDictionary.MissingVenueType> values) {
+        if (values == null) {
+            return;
+        }
+        for (VenueTypeDictionary.MissingVenueType value : values) {
+            if (value == null) {
+                continue;
+            }
+            missingVenueTypes.putIfAbsent(value.original() + "\0" + value.normalized(), value);
+        }
+    }
+
     void recordFailure(String url, String error) {
         try {
             Files.createDirectories(metaDir);
@@ -72,6 +85,7 @@ final class ImageResourceManager {
             Files.createDirectories(metaDir);
             Files.writeString(metaDir.resolve("image_mapping.json"), mappingJson(), StandardCharsets.UTF_8);
             Files.writeString(metaDir.resolve("missing_images.json"), missingJson(), StandardCharsets.UTF_8);
+            Files.writeString(metaDir.resolve("missing_venue_type.json"), missingVenueTypeJson(), StandardCharsets.UTF_8);
         } catch (IOException ignored) {
             // The workbook remains usable even when sidecar files cannot be written.
         }
@@ -108,6 +122,21 @@ final class ImageResourceManager {
                     .append("    \"market\": \"").append(escape(r.market())).append("\",\n")
                     .append("    \"venue_type\": \"").append(escape(r.venueType())).append("\",\n")
                     .append("    \"proposal_row\": ").append(r.proposalRow()).append("\n")
+                    .append("  }");
+        }
+        return json.append("\n]\n").toString();
+    }
+
+    private String missingVenueTypeJson() {
+        StringBuilder json = new StringBuilder("[\n");
+        int index = 0;
+        for (VenueTypeDictionary.MissingVenueType value : missingVenueTypes.values()) {
+            if (index++ > 0) {
+                json.append(",\n");
+            }
+            json.append("  {\n")
+                    .append("    \"original\": \"").append(escape(value.original())).append("\",\n")
+                    .append("    \"normalized\": \"").append(escape(value.normalized())).append("\"\n")
                     .append("  }");
         }
         return json.append("\n]\n").toString();

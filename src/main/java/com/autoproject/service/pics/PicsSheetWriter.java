@@ -5,12 +5,15 @@ import com.autoproject.service.summary.ProposalSummaryRow;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.ClientAnchor;
 import org.apache.poi.ss.usermodel.Drawing;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.util.IOUtils;
 import org.apache.poi.util.Units;
+import org.apache.poi.common.usermodel.HyperlinkType;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -42,6 +45,7 @@ public class PicsSheetWriter {
     private static final int MAX_FRAMES_PER_GROUP_FOR_LINKS_BILLBOARD = 40;
     private final Random random = new Random();
     private CellStyle picMetaTextStyle;
+    private CellStyle sourceLinkStyle;
 
     public void write(Sheet picsSheet, List<FrameData> frames, String localPicsRootPath) {
         write(picsSheet, frames, localPicsRootPath, true, null);
@@ -59,6 +63,7 @@ public class PicsSheetWriter {
             PicsLinkProgress progress) {
         PicsLinkProgress prog = progress == null ? PicsLinkProgress.noop() : progress;
         picMetaTextStyle = null;
+        sourceLinkStyle = null;
         writeHeader(picsSheet);
         if (frames == null || frames.isEmpty()) {
             prog.onStart(0);
@@ -117,8 +122,9 @@ public class PicsSheetWriter {
     /**
      * Writes PICS rows from Proposal dimensions and resolves images from {@code feishu/supply_matrix.xlsx}.
      *
-     * <p>Each Proposal row contributes Country + MARKET + dotted Venue type tokens. Images are downloaded to
-     * {@code metaDir} before being inserted into this sheet.</p>
+     * <p>Each Proposal row contributes Country + MARKET + dotted Venue candidates. Candidates first pass through
+     * {@code config/venue_type_dictionary.csv}; only canonical values (or UNKNOWN fallback) can reach image matching.
+     * Images are downloaded to {@code metaDir} before being inserted into this sheet.</p>
      */
     public void writeFromProposalRows(
             Sheet picsSheet,
@@ -129,6 +135,7 @@ public class PicsSheetWriter {
             PicsLinkProgress progress) {
         PicsLinkProgress prog = progress == null ? PicsLinkProgress.noop() : progress;
         picMetaTextStyle = null;
+        sourceLinkStyle = null;
         writeHeader(picsSheet);
         if (proposalRows == null || proposalRows.isEmpty()) {
             prog.onStart(0);
@@ -138,30 +145,32 @@ public class PicsSheetWriter {
             return;
         }
 
-        List<ProposalImageRequest> requests = ProposalImageRequestParser.parse(proposalRows);
-        prog.onStart(requests.size());
-        SupplyMatrixImageResolver resolver = fetchFromLinks
-                ? SupplyMatrixImageResolver.load(supplyMatrixPath)
-                : SupplyMatrixImageResolver.load(null);
-        HttpClient httpClient = fetchFromLinks && !resolver.isEmpty() ? FrameImageLinkFetcher.newClient() : null;
         ImageResourceManager resources = new ImageResourceManager(metaDir);
         try {
             resources.initialize();
         } catch (IOException ignored) {
             // PICS still renders placeholders when the sidecar directory is not writable.
         }
-
+        ProposalImageRequestParser.ParseResult parsed = ProposalImageRequestParser.parse(
+                proposalRows, VenueTypeDictionary.loadConfigured());
+        List<ProposalImageRequest> requests = parsed.requests();
+        resources.recordMissingVenueTypes(parsed.missingVenueTypes());
+        prog.onStart(requests.size());
+        // Matrix lookup is local and should remain available even when remote downloading is disabled.
+        SupplyMatrixImageResolver resolver = SupplyMatrixImageResolver.load(supplyMatrixPath);
+        HttpClient httpClient = fetchFromLinks && !resolver.isEmpty() ? FrameImageLinkFetcher.newClient() : null;
         int rowNum = 1;
         int completed = 0;
         for (ProposalImageRequest request : requests) {
+            List<String> matchedLinks = resolver.resolveImageLinks(request, MAX_PICK_COUNT);
             List<FrameImageLinkFetcher.PooledImage> resolved = httpClient == null
                     ? List.of()
                     : resolver.resolveImages(request, httpClient, resources, MAX_PICK_COUNT);
-            if (httpClient == null) {
+            if (httpClient == null && matchedLinks.isEmpty()) {
                 resources.recordMissing(request);
             }
             List<FrameImageLinkFetcher.PooledImage> picked = resolved.isEmpty()
-                    ? List.of(createPlaceholder(request))
+                    ? (matchedLinks.isEmpty() ? List.of(createPlaceholder(request)) : List.of())
                     : new ArrayList<>(resolved.subList(0, Math.min(MAX_PICK_COUNT, resolved.size())));
             int imageRowIndex = rowNum;
             Row row = picsSheet.createRow(imageRowIndex);
@@ -169,7 +178,12 @@ public class PicsSheetWriter {
             row.createCell(0).setCellValue(normalizeOrNullSentinel(request.market()));
             row.createCell(1).setCellValue(normalizeOrNullSentinel(request.country()));
             row.createCell(2).setCellValue(normalizeOrNullSentinel(request.venueType()));
-            row.createCell(3).setCellValue(resolved.size());
+            int outputCount = resolved.isEmpty() ? matchedLinks.size() : resolved.size();
+            row.createCell(3).setCellValue(outputCount);
+
+            // Always retain the curated supply source. A Feishu folder may require authentication and therefore fail
+            // anonymous image download, but the user must still be able to open the matched resource from PICS.
+            writeSourceLinks(picsSheet, imageRowIndex, matchedLinks);
 
             for (int i = 0; i < picked.size(); i++) {
                 insertPooledImage(picsSheet, imageRowIndex, 4 + i, picked.get(i));
@@ -186,6 +200,44 @@ public class PicsSheetWriter {
 
         resources.finish();
         finishColumnSizing(picsSheet);
+    }
+
+    private void writeSourceLinks(Sheet sheet, int rowIndex, List<String> links) {
+        if (links == null || links.isEmpty()) {
+            return;
+        }
+        Row row = sheet.getRow(rowIndex);
+        if (row == null) {
+            row = sheet.createRow(rowIndex);
+        }
+        CellStyle style = getOrCreateSourceLinkStyle(sheet);
+        int count = Math.min(MAX_PICK_COUNT, links.size());
+        for (int i = 0; i < count; i++) {
+            String link = links.get(i);
+            if (link == null || link.isBlank()) {
+                continue;
+            }
+            var cell = row.getCell(4 + i, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+            cell.setCellValue(link.trim());
+            cell.setCellStyle(style);
+            var hyperlink = sheet.getWorkbook().getCreationHelper().createHyperlink(HyperlinkType.URL);
+            hyperlink.setAddress(link.trim());
+            cell.setHyperlink(hyperlink);
+        }
+    }
+
+    private CellStyle getOrCreateSourceLinkStyle(Sheet sheet) {
+        if (sourceLinkStyle == null) {
+            CellStyle style = sheet.getWorkbook().createCellStyle();
+            style.setWrapText(true);
+            style.setVerticalAlignment(VerticalAlignment.TOP);
+            Font font = sheet.getWorkbook().createFont();
+            font.setColor(IndexedColors.BLUE.getIndex());
+            font.setUnderline(Font.U_SINGLE);
+            style.setFont(font);
+            sourceLinkStyle = style;
+        }
+        return sourceLinkStyle;
     }
 
     /**

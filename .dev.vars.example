@@ -1,0 +1,6 @@
+# Use a user_access_token or tenant_access_token. Do not commit a real token.
+PROPEL_FEISHU_ACCESS_TOKEN=
+
+# Alternatively, use a Feishu custom app. The target folders must be shared with the app and Drive scopes enabled.
+PROPEL_FEISHU_APP_ID=
+PROPEL_FEISHU_APP_SECRET=
