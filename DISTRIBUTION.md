@@ -1,62 +1,151 @@
-# 记录：
-打包说明：使用者环境不必安装Java编译器
+# Propel 一键运行程序打包与使用
 
-## 结论
+## Windows 最终产物
 
-- **可以**：打好的包自带 Java 运行时，对方电脑**不用**单独安装 Java。
-- **限制**：目前脚本生成的是 **Windows 64 位** 绿色版文件夹，不是单个极小 exe；请把整个文件夹打成 **zip** 再发送。
-- **系统**：对方需要 **Windows 10/11（64 位）**。Mac/Linux 需另做打包。
+默认打包会生成一个可直接发送的 Windows 安装文件：
 
-## 打包流程（只需做一次）
+```text
+release\windows\propel-1.0.0.exe
+```
 
-1. 安装 **JDK 21**（不是 JRE），并保证命令行能执行：
-   - `java -version`
-   - `jpackage --version`
-2. 在项目根目录打开 PowerShell，执行：
+- 使用者只需拿到这一个安装 `.exe`。
+- 安装包已包含程序和专用 Java 运行时；使用者不用安装 Java、JDK 或 Maven。
+- 支持 Windows 10/11 64 位。
+- 安装后提供两个独立入口：
+
+| 启动文件 | 功能 |
+|---|---|
+| `propel.exe` | 打开原桌面整合程序 |
+| `propel-web.exe` | 启动本地网页后端并自动打开浏览器 |
+
+`propel-web.exe` 默认使用 `http://127.0.0.1:8080`。如果 8080 已被占用，会自动尝试
+8081–8099，必要时选择其他系统空闲端口，不需要再手动修改命令行。
+
+> `jpackage` 的 Windows EXE 是安装包，不是可以从任意位置直接运行的单文件绿色程序。这样可以可靠地携带 Java 运行时，并避免误删 `runtime` 或 `app` 目录导致程序无法启动。
+
+## 最简单的打包方式：GitHub Actions
+
+项目已经提供 `.github/workflows/build-windows-exe.yml`，因此在 Mac 上开发也能生成 Windows EXE。
+
+1. 将代码推送到 GitHub。
+2. 打开仓库的 **Actions** 页面。
+3. 选择 **Build Windows EXE**。
+4. 点击 **Run workflow**。
+5. 构建完成后，下载名为 **propel-Windows-exe** 的 Artifact。
+6. 解压 Artifact，得到安装包和免安装包：
+
+```text
+propel-1.0.0.exe
+propel-Windows-portable.zip
+SHA256SUMS.txt
+```
+
+安装包会创建 `propel` 和 `propel-web` 两个入口。免安装包完整解压后，也会同时包含
+`propel.exe` 与 `propel-web.exe`。工作流会先运行 Maven 测试，再生成产物；测试或打包失败时不会上传错误产物。推送形如 `v1.0.0` 的 tag 也会自动触发构建。
+
+## 在 Windows 电脑本地打包
+
+打包电脑需要：
+
+- JDK 21，并设置 `JAVA_HOME`
+- Maven 3.9 或更新版本
+- WiX Toolset 3
+
+安装 WiX（已安装 Chocolatey 时）：
+
+```powershell
+choco install wixtoolset --no-progress -y
+```
+
+在项目根目录运行：
 
 ```powershell
 .\scripts\package-windows.ps1
 ```
 
-3. 若以前打包失败过，先清理嵌套目录（只需一次）：
+也可以直接双击：
+
+```text
+scripts\build-windows-bundle.cmd
+```
+
+默认会执行测试并生成 `release\windows\propel-1.0.0.exe`。仅在临时诊断构建时跳过测试：
 
 ```powershell
-.\scripts\clean-package-artifacts.ps1
+.\scripts\package-windows.ps1 -SkipTests
 ```
 
-4. 成功后产物在：
+## 备用：免安装绿色版
 
+如果确实需要免安装版本：
+
+```powershell
+.\scripts\package-windows.ps1 -PackageType Portable
 ```
-dist\propel\
-  propel.exe          ← 双击启动图形界面
-  runtime\             ← 内置 Java，不要删
-  app\                 ← 程序文件，不要删
+
+产物为：
+
+```text
+release\windows\propel-Windows-portable.zip
 ```
 
-5. 将 **`dist\propel` 整个文件夹** 压缩为 `propel-win.zip`，发给同事。
+使用者必须完整解压 ZIP：
 
-## 使用：
+- 双击 `propel.exe` 打开桌面版。
+- 双击 `propel-web.exe` 一键打开本地网页版。
 
-1. 解压 zip 到任意目录（路径尽量不要含奇怪符号）。
-2. 双击 **`propel.exe`**（应出现 propel 图形窗口；若只有闪一下，说明用的是旧包，需用最新代码重新打包）。
-3. 若 Windows 提示「未知发布者」：点 **更多信息** → **仍要运行**（未签名时常见）。
-4. 按界面导入 CSV、填预算、导出 Excel（与开发环境用法相同）。
+不能只把其中任意一个 EXE 单独复制出来，因为两个启动器都依赖同目录下的 `app` 和 `runtime`。
 
-## 打包命令（仅脚本）
+同时生成单文件安装包和绿色版：
 
-请使用 `scripts\package-windows.ps1`（会先 `mvn package` 再 `jpackage`）。不要用 `mvn clean` 与正在生成的 `target\dist` 同时进行。
+```powershell
+.\scripts\package-windows.ps1 -PackageType All
+```
+
+## 使用说明
+
+1. 双击 `propel-1.0.0.exe` 完成安装。
+2. 双击 `propel-web`，程序会启动本地后端并自动打开默认浏览器。
+3. 在网页中导入 CSV、TSV 或 Excel 文件，填写预算并导出结果。
+4. 需要原桌面界面时，双击 `propel`。
+5. 如 Windows 显示“未知发布者”，点击 **更多信息** → **仍要运行**。这是未购买代码签名证书时的正常提示。
+
+## macOS 一键网页版
+
+macOS 不能运行 `.exe`，对应的一键程序是：
+
+```text
+release/macos/Propel Web.app
+```
+
+在项目根目录运行一次打包命令：
+
+```bash
+./scripts/package-macos-web.sh --skip-tests
+```
+
+以后直接双击 `Propel Web.app`，它会自动启动本地端口并打开浏览器。应用已包含专用 Java
+运行时、网页前后端和 `feishu/supply_matrix.xlsx`，不需要再输入 `java -cp ...` 命令。
+如果 Maven 不在 `PATH` 中，可以通过 `MAVEN_BIN=/完整路径/mvn` 指定。
 
 ## 常见问题
 
-| 问题 | 说明 |
-|------|------|
-| `path exceeding 32000 characters` / 删不掉 `target\dist` | 旧版把输出放在 `target\dist` 且输入过整个 `target`，会产生 `app\dist\propel\...` 无限嵌套。先运行 `.\scripts\clean-package-artifacts.ps1`，再用最新脚本（输出在 **`dist\propel`**，输入只有 jar） |
-| 打包机找不到 `jpackage` | 安装完整 **JDK 21**，把 `%JAVA_HOME%\bin` 加入 PATH |
-| 同事双击没反应 | 是否只发了 `propel.exe` 没发整个文件夹；是否 32 位 Windows |
-| 体积很大 | 正常，内含精简 JRE，约 80–150 MB |
-| 需要安装版 `.msi` | 需额外安装 [WiX Toolset 3](https://wixtoolset.org/)，再用 `jpackage --type exe`（可后续再加） |
+| 问题 | 处理方式 |
+|---|---|
+| `jpackage.exe was not found` | 安装完整 JDK 21，不要只装 JRE；把 `JAVA_HOME` 指向 JDK |
+| `WiX Toolset 3 was not found` | 安装 WiX 3，重新打开 PowerShell 后再打包 |
+| 双击旧 `propel.exe` 没反应 | 不要从旧绿色版文件夹单独复制 EXE；改用新的 `propel-1.0.0.exe` 安装包 |
+| 8080 端口已经被占用 | `propel-web` 会自动选择下一个可用本地端口并打开正确地址 |
+| Windows 提示未知发布者 | 当前 EXE 未签名；可继续运行，正式外发时建议购买代码签名证书 |
+| 需要修改版本号 | 运行 `.\scripts\package-windows.ps1 -AppVersion 1.1.0` |
 
-## 技术说明
+## 技术入口
 
-- 程序入口：`com.autoproject.Main`（默认打开 **propel** 图形界面）。
-- 普通 `mvn package` **不会**跑 jpackage（避免没有 JDK 的环境构建失败）；只有 `-Pwindows-app` 或上述脚本会生成 exe。
+- 桌面程序入口：`com.autoproject.Main`
+- 本地网页一键入口：`com.autoproject.web.WebLauncherMain`
+- Windows 网页启动器：`propel-web.exe`
+- macOS 网页启动器：`Propel Web.app`
+- 打包时固定传入：`--gui`
+- Java 最大堆内存：`4 GB`
+- Supply Matrix 会打包到应用内部，并通过 `$APPDIR` 固定定位
+- Windows 升级 UUID 固定不变，因此未来版本可以覆盖升级

@@ -49,15 +49,17 @@ final class WebExportService {
             throw new IllegalArgumentException("PICS images are resolved from feishu/supply_matrix.xlsx. Local PICS uploads are not supported.");
         }
 
-        if (!allowRemoteImages) {
-            throw new IllegalArgumentException("This deployment is not allowed to fetch external PICS images.");
-        }
+        // The latest PICS pipeline can still match the local supply matrix, preserve curated source links,
+        // and render placeholders when remote downloads are disabled. The deployment flag remains the
+        // server-side upper bound; the request can additionally opt out of downloading.
+        boolean fetchPicsFromLinks =
+                allowRemoteImages && booleanValue(form.first("fetchPicsFromLinks"));
 
         Brief brief = new Brief(location, budget, campaignDays, true, null, Map.of());
         brief.setSourceCurrency(sourceCurrency);
         brief.setTargetCurrency(targetCurrency);
         brief.setCurrencyExchangeRate(exchangeRate);
-        brief.setPicsFetchFromLinks(true);
+        brief.setPicsFetchFromLinks(fetchPicsFromLinks);
 
         List<FrameData> merged = new DataMerger().merge(inputPaths.toArray(String[]::new));
         applyPhotographyBudget(brief, merged, form.first("photographyMode"), form.first("photographyBudget"));

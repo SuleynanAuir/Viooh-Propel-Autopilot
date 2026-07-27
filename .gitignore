@@ -12,6 +12,7 @@ npm-debug.log*
 # Rebuildable desktop/package output
 /dist/
 /dist 2/
+/release/
 /propel-*.zip
 /merged_output.xlsx
 

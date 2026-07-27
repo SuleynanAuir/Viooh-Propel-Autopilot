@@ -17,7 +17,7 @@ public class Brief {
     private String targetCurrency;
     private Double currencyExchangeRate;
     private String localPicsRootPath;
-    /** When false, PICS skips downloading from {@code FRAMEIMAGEPATH} URLs. */
+    /** When false, PICS skips remote supply-matrix image downloads but still performs local matching. */
     private boolean picsFetchFromLinks = true;
     /**
      * Optional line item when frames are fully allocated but campaign budget remains; does not affect

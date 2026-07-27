@@ -23,11 +23,16 @@ function Remove-TreeForce([string]$Path) {
     }
 }
 
-Get-Process -Name propel -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+$runningApp = Get-Process -Name @("propel", "propel-web") -ErrorAction SilentlyContinue
+if ($runningApp) {
+    throw "propel.exe or propel-web.exe is running. Close it before cleaning package artifacts."
+}
 
 Remove-TreeForce (Join-Path $Root "target\dist")
-Remove-TreeForce (Join-Path $Root "dist")
+Remove-TreeForce (Join-Path $Root "release\windows")
 Remove-TreeForce (Join-Path $Root "target\jpackage-input")
 Remove-TreeForce (Join-Path $env:TEMP "propel-jpackage")
+Get-ChildItem -Path $env:TEMP -Directory -Filter "propel-jpackage-*" -ErrorAction SilentlyContinue |
+    ForEach-Object { Remove-TreeForce $_.FullName }
 
 Write-Host "Cleanup finished."

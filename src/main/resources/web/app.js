@@ -20,12 +20,19 @@ const exchangeRateField = document.querySelector('#exchange-rate-field');
 const outputName = document.querySelector('#output-name');
 const chooseSaveLocation = document.querySelector('#choose-save-location');
 const saveLocationSummary = document.querySelector('#save-location-summary');
+const feishuAuthPanel = document.querySelector('#feishu-auth-panel');
+const feishuAccessToken = document.querySelector('#feishu-access-token');
+const feishuAppId = document.querySelector('#feishu-app-id');
+const feishuAppSecret = document.querySelector('#feishu-app-secret');
+const saveFeishuAuth = document.querySelector('#save-feishu-auth');
+const feishuAuthStatus = document.querySelector('#feishu-auth-status');
 
 let selectedFiles = [];
 let maxUploadBytes = Infinity;
 let saveFileHandle = null;
 let exportServiceAvailable = false;
 let exportInProgress = false;
+let desktopMode = false;
 let healthRetryTimer = null;
 let healthAttempt = 0;
 const MAX_AUTOMATIC_HEALTH_ATTEMPTS = 6;
@@ -226,6 +233,8 @@ async function loadServerCapabilities(manualRetry = false) {
     const health = await response.json();
     exportServiceAvailable = true;
     exportInProgress = false;
+    desktopMode = health.desktopMode === true;
+    feishuAuthPanel.hidden = !desktopMode;
     healthAttempt = 0;
     submitButton.type = 'submit';
     submitButton.disabled = false;
@@ -238,11 +247,13 @@ async function loadServerCapabilities(manualRetry = false) {
     maxUploadLabel.textContent = `Limit ${formatBytes(maxUploadBytes)} per request`;
     const help = document.querySelector('#remote-images-help');
     if (!health.allowRemoteImages) {
-      help.textContent = 'This deployment has disabled external image fetching. Ask the deployment owner to enable it.';
+      help.textContent = 'External image downloading is disabled. PICS still uses the latest Proposal and supply-matrix matching logic, preserves matched source links, and inserts placeholders when needed.';
     } else if (health.feishuAuthConfigured) {
-      help.textContent = 'Feishu authentication is configured. The backend matches the supply matrix, downloads folder images into meta/images, and embeds them in PICS.';
+      help.textContent = 'Feishu authentication is configured. The backend normalizes Proposal venue types, matches the supply matrix, downloads folder images into meta/images, and embeds them in PICS.';
     } else {
-      help.textContent = 'Supply links will be written into PICS, but Feishu image downloading needs PROPEL_FEISHU_ACCESS_TOKEN or the Feishu app credentials on the backend.';
+      help.textContent = desktopMode
+        ? 'The latest PICS matching logic is active. Enter Feishu credentials below so protected folder images can be downloaded into meta/images and embedded in PICS.'
+        : 'The latest PICS matching logic is active and supply links are preserved. Protected Feishu images require PROPEL_FEISHU_ACCESS_TOKEN or Feishu app credentials for downloading.';
     }
   } catch {
     exportServiceAvailable = false;
@@ -269,6 +280,36 @@ async function loadServerCapabilities(manualRetry = false) {
     statusDetail.textContent = 'Retry the connection. If it still fails, open the Workers deployment URL: a static Cloudflare Pages deployment cannot run the Java export backend.';
   }
 }
+
+saveFeishuAuth.addEventListener('click', async () => {
+  if (!desktopMode) return;
+  const body = new URLSearchParams();
+  body.set('accessToken', feishuAccessToken.value.trim());
+  body.set('appId', feishuAppId.value.trim());
+  body.set('appSecret', feishuAppSecret.value.trim());
+  saveFeishuAuth.disabled = true;
+  feishuAuthStatus.textContent = 'Applying credentials...';
+  try {
+    const response = await fetch('/api/feishu-auth', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'X-Propel-Desktop': '1',
+      },
+      body,
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+    feishuAccessToken.value = '';
+    feishuAppSecret.value = '';
+    feishuAuthStatus.textContent = 'Credentials are active for this app session.';
+    await loadServerCapabilities(true);
+  } catch (error) {
+    feishuAuthStatus.textContent = error instanceof Error ? error.message : 'Could not apply credentials.';
+  } finally {
+    saveFeishuAuth.disabled = false;
+  }
+});
 
 submitButton.addEventListener('click', event => {
   if (!exportServiceAvailable && submitButton.type === 'button') {

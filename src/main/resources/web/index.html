@@ -144,7 +144,30 @@
           <div class="option-content stack">
             <div class="info-box" id="remote-images-row">
               <strong>Supply matrix image fetching</strong>
-              <small id="remote-images-help">The backend matches Proposal Country, MARKET, and Venue type tokens against feishu/supply_matrix.xlsx, downloads Pictures links into meta, and inserts them into PICS.</small>
+              <small id="remote-images-help">The backend builds PICS from Proposal rows, normalizes venue types, matches feishu/supply_matrix.xlsx, preserves source links, and embeds downloadable images.</small>
+            </div>
+            <div id="feishu-auth-panel" class="local-auth-panel" hidden>
+              <strong>Authenticate Feishu Drive for this app session</strong>
+              <small>Use either an access token, or a Feishu App ID and App Secret. Credentials stay in this local process and are not written into the workbook.</small>
+              <label class="field full">
+                <span>Access token</span>
+                <input id="feishu-access-token" type="password" autocomplete="off" placeholder="user_access_token or tenant_access_token">
+              </label>
+              <span class="auth-divider">or</span>
+              <div class="field-grid">
+                <label class="field">
+                  <span>Feishu App ID</span>
+                  <input id="feishu-app-id" type="text" autocomplete="off" placeholder="cli_...">
+                </label>
+                <label class="field">
+                  <span>Feishu App Secret</span>
+                  <input id="feishu-app-secret" type="password" autocomplete="off">
+                </label>
+              </div>
+              <div class="local-auth-actions">
+                <button id="save-feishu-auth" class="secondary-button" type="button">Use credentials</button>
+                <small id="feishu-auth-status" role="status"></small>
+              </div>
             </div>
           </div>
         </details>

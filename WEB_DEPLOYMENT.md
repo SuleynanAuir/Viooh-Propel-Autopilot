@@ -29,6 +29,17 @@ mvn -DskipTests package
 java -cp target/Auto_project-1.0-SNAPSHOT.jar com.autoproject.web.WebMain
 ```
 
+### macOS 一键打开
+
+生成自带 Java 运行时、后端和 Supply Matrix 的可双击应用：
+
+```bash
+./scripts/package-macos-web.sh --skip-tests
+```
+
+然后双击 `release/macos/Propel Web.app`。应用默认打开 `http://127.0.0.1:8080`；
+如果端口已占用，会自动选择其他可用本地端口并打开正确地址。
+
 ## Cloudflare 部署：必须使用 Workers + Containers
 
 这个项目不是纯静态 Pages 应用。前端只是操作界面，真正的导出仍然是原 `propel` Java 流程：
@@ -128,7 +139,7 @@ Java 服务自身默认接受 250 MiB，可通过 `PROPEL_MAX_UPLOAD_BYTES` 调�
 | `PORT` | `8080` | Container HTTP 端口 |
 | `PROPEL_MAX_UPLOAD_BYTES` | `262144000` | multipart 请求最大字节数 |
 | `PROPEL_MAX_CONCURRENT_EXPORTS` | `1` | 单 Container 同时生成的工作簿数量 |
-| `PROPEL_ALLOW_REMOTE_IMAGES` | `true` | 是否允许从 supply matrix Pictures 链接下载 PICS 图片 |
+| `PROPEL_ALLOW_REMOTE_IMAGES` | `true` | 是否允许从 supply matrix Pictures 链接下载 PICS 图片；设为 `false` 时仍执行本地矩阵匹配、保留来源链接，并在缺图时写入占位图 |
 | `PROPEL_SUPPLY_MATRIX_PATH` | `feishu/supply_matrix.xlsx` | supply matrix 文件路径 |
 | `PROPEL_VENUE_TYPE_DICTIONARY_PATH` | `config/venue_type_dictionary.csv` | PICS Venue Type 标准白名单文件路径 |
 | `PROPEL_FEISHU_ACCESS_TOKEN` | 空 | 飞书 `user_access_token` 或 `tenant_access_token`；用于列出文件夹并下载图片 |

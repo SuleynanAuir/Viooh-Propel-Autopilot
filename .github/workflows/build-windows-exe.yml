@@ -1,0 +1,71 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-exe:
+    name: Build propel Windows EXE
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 21 and Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Install WiX Toolset 3
+        shell: powershell
+        run: |
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset --no-progress -y
+          }
+
+      - name: Build and test desktop and web launchers
+        shell: powershell
+        run: .\scripts\package-windows.ps1 -PackageType All
+
+      - name: Verify one-click web launcher
+        shell: powershell
+        run: |
+          $webLauncher = ".\release\windows\portable\propel\propel-web.exe"
+          if (-not (Test-Path $webLauncher -PathType Leaf)) {
+            throw "The one-click web launcher was not created: $webLauncher"
+          }
+
+      - name: Write SHA-256 checksum
+        shell: powershell
+        run: |
+          $files = Get-ChildItem .\release\windows\* -File |
+            Where-Object { $_.Extension -in @(".exe", ".zip") }
+          if (-not $files) {
+            throw "Windows release files were not created."
+          }
+          $checksums = foreach ($file in $files) {
+            $hash = (Get-FileHash -Algorithm SHA256 $file.FullName).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          $checksums | Set-Content .\release\windows\SHA256SUMS.txt -Encoding ascii
+
+      - name: Upload Windows installer and portable launchers
+        uses: actions/upload-artifact@v4
+        with:
+          name: propel-Windows-exe
+          path: |
+            release/windows/*.exe
+            release/windows/*.zip
+            release/windows/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30

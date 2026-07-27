@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.net.URLConnection;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -34,16 +35,25 @@ final class PropelHttpServer {
     private final HttpServer server;
     private final long maxUploadBytes;
     private final boolean allowRemoteImages;
+    private final boolean desktopMode;
     private final Semaphore exportSlots;
 
     PropelHttpServer(int port) throws IOException {
+        this("0.0.0.0", port);
+    }
+
+    PropelHttpServer(String host, int port) throws IOException {
         this.maxUploadBytes = longEnvironment("PROPEL_MAX_UPLOAD_BYTES", 250L * 1024 * 1024, 1024, Long.MAX_VALUE);
         this.allowRemoteImages = booleanEnvironment("PROPEL_ALLOW_REMOTE_IMAGES", true);
+        this.desktopMode = Boolean.getBoolean("propel.desktopMode") && isLoopbackHost(host);
         int concurrentExports = (int) longEnvironment("PROPEL_MAX_CONCURRENT_EXPORTS", 1, 1, 16);
         this.exportSlots = new Semaphore(concurrentExports);
-        this.server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
+        this.server = HttpServer.create(new InetSocketAddress(host, port), 0);
         this.server.createContext("/api/health", this::health);
         this.server.createContext("/api/export", this::export);
+        if (desktopMode) {
+            this.server.createContext("/api/feishu-auth", this::configureFeishuAuth);
+        }
         this.server.createContext("/", new StaticHandler());
         this.server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
     }
@@ -56,6 +66,10 @@ final class PropelHttpServer {
         server.stop((int) Duration.ofSeconds(10).toSeconds());
     }
 
+    int port() {
+        return server.getAddress().getPort();
+    }
+
     private void health(HttpExchange exchange) throws IOException {
         if (!"GET".equals(exchange.getRequestMethod())) {
             methodNotAllowed(exchange, "GET");
@@ -63,8 +77,48 @@ final class PropelHttpServer {
         }
         String body = "{\"status\":\"ok\",\"maxUploadBytes\":" + maxUploadBytes
                 + ",\"allowRemoteImages\":" + allowRemoteImages
-                + ",\"feishuAuthConfigured\":" + FeishuDriveClient.isAuthenticationConfigured() + "}";
+                + ",\"feishuAuthConfigured\":" + FeishuDriveClient.isAuthenticationConfigured()
+                + ",\"desktopMode\":" + desktopMode + "}";
         sendJson(exchange, 200, body);
+    }
+
+    private void configureFeishuAuth(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            methodNotAllowed(exchange, "POST");
+            return;
+        }
+        if (!"1".equals(exchange.getRequestHeaders().getFirst("X-Propel-Desktop"))) {
+            sendJson(exchange, 403, errorJson("Desktop authentication request was rejected"));
+            return;
+        }
+
+        byte[] bytes = exchange.getRequestBody().readNBytes(65_537);
+        if (bytes.length > 65_536) {
+            sendJson(exchange, 413, errorJson("Credential request is too large"));
+            return;
+        }
+        Map<String, String> form = parseUrlEncoded(new String(bytes, StandardCharsets.UTF_8));
+        String accessToken = trim(form.get("accessToken"));
+        String appId = trim(form.get("appId"));
+        String appSecret = trim(form.get("appSecret"));
+
+        if (!accessToken.isBlank()) {
+            System.setProperty("propel.feishu.accessToken", accessToken);
+            System.clearProperty("propel.feishu.appId");
+            System.clearProperty("propel.feishu.appSecret");
+        } else if (!appId.isBlank() && !appSecret.isBlank()) {
+            System.clearProperty("propel.feishu.accessToken");
+            System.setProperty("propel.feishu.appId", appId);
+            System.setProperty("propel.feishu.appSecret", appSecret);
+        } else {
+            sendJson(exchange, 400, errorJson(
+                    "Enter an access token, or enter both a Feishu App ID and App Secret"));
+            return;
+        }
+
+        sendJson(exchange, 200,
+                "{\"status\":\"ok\",\"feishuAuthConfigured\":"
+                        + FeishuDriveClient.isAuthenticationConfigured() + "}");
     }
 
     private void export(HttpExchange exchange) throws IOException {
@@ -193,6 +247,36 @@ final class PropelHttpServer {
         } catch (NumberFormatException ignored) {
             return -1;
         }
+    }
+
+    private static Map<String, String> parseUrlEncoded(String body) {
+        Map<String, String> fields = new java.util.LinkedHashMap<>();
+        if (body == null || body.isBlank()) {
+            return fields;
+        }
+        for (String pair : body.split("&")) {
+            int equals = pair.indexOf('=');
+            String rawName = equals < 0 ? pair : pair.substring(0, equals);
+            String rawValue = equals < 0 ? "" : pair.substring(equals + 1);
+            String name = URLDecoder.decode(rawName, StandardCharsets.UTF_8);
+            String value = URLDecoder.decode(rawValue, StandardCharsets.UTF_8);
+            fields.put(name, value);
+        }
+        return fields;
+    }
+
+    private static String trim(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private static boolean isLoopbackHost(String host) {
+        if (host == null) {
+            return false;
+        }
+        String normalized = host.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("127.0.0.1")
+                || normalized.equals("localhost")
+                || normalized.equals("::1");
     }
 
     private static void deleteTree(Path root) {

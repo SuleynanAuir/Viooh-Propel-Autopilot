@@ -242,6 +242,28 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .info-box strong { font-size: 12px; }
 .info-box small { color: var(--muted); font-size: 11px; line-height: 1.5; }
 
+.local-auth-panel {
+  padding: 15px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d6dfdc;
+  border-radius: 11px;
+  background: #fafcfb;
+}
+.local-auth-panel[hidden] { display: none; }
+.local-auth-panel > strong { font-size: 12px; }
+.local-auth-panel > small,
+.local-auth-actions small { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.auth-divider {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}
+.local-auth-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.local-auth-actions .secondary-button { flex: 0 0 auto; }
+
 .switch-row { display: flex; align-items: center; gap: 11px; cursor: pointer; }
 .switch-row input { position: absolute; opacity: 0; }
 .switch-row > span:last-child { display: flex; flex-direction: column; gap: 3px; }

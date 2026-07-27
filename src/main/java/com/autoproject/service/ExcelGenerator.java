@@ -128,7 +128,10 @@ public class ExcelGenerator {
     }
 
     private static Path supplyMatrixPath() {
-        String configured = System.getenv("PROPEL_SUPPLY_MATRIX_PATH");
+        String configured = System.getProperty("propel.supplyMatrixPath");
+        if (configured == null || configured.isBlank()) {
+            configured = System.getenv("PROPEL_SUPPLY_MATRIX_PATH");
+        }
         if (configured != null && !configured.isBlank()) {
             return Path.of(configured.trim());
         }
