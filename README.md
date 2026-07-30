@@ -51,10 +51,9 @@ open "/Applications/Propel Web.app"
 
 1. 下载 `propel-1.0.0.exe`。
 2. 双击并完成安装向导。
-3. 安装后双击 `propel.exe`：它会启动与 macOS 版本相同的本地 Java 后端，并自动打开浏览器页面。
-4. 另外保留两个兼容/备用入口：
-   - `propel-web.exe`：与 `propel.exe` 相同的网页版兼容入口。
-   - `propel-desktop.exe`：需要旧界面时使用的原桌面入口。
+3. 安装后可使用两个入口：
+   - `propel-web.exe`：启动本地网页并自动打开浏览器。
+   - `propel.exe`：启动原桌面界面。
 
 安装包已经包含专用 Java 运行时，不需要另外安装 Java。
 
@@ -65,9 +64,9 @@ open "/Applications/Propel Web.app"
 1. 下载 `propel-Windows-portable.zip`。
 2. 右键选择“全部解压”，不要直接在 ZIP 压缩包内运行。
 3. 打开解压后的 `propel` 文件夹。
-4. 双击 `propel.exe`，即可启动与 macOS 相同的本地网页版。
+4. 双击 `propel-web.exe` 或 `propel.exe`。
 
-`propel-web.exe` 是相同网页版的兼容入口；`propel-desktop.exe` 是旧桌面界面。便携版里的 EXE 依赖同目录下的 `app` 和 `runtime` 文件夹，不能只复制单个 EXE，也不要删除这些目录。
+便携版里的 EXE 依赖同目录下的 `app` 和 `runtime` 文件夹。不能只复制单个 EXE，也不要删除这些目录。
 
 ## PICS 与飞书图片
 
