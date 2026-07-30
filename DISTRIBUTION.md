@@ -11,14 +11,15 @@ release\windows\propel-1.0.0.exe
 - 使用者只需拿到这一个安装 `.exe`。
 - 安装包已包含程序和专用 Java 运行时；使用者不用安装 Java、JDK 或 Maven。
 - 支持 Windows 10/11 64 位。
-- 安装后提供两个独立入口：
+- 安装后提供三个入口，默认入口与 macOS 一样使用本地网页版：
 
 | 启动文件 | 功能 |
 |---|---|
-| `propel.exe` | 打开原桌面整合程序 |
-| `propel-web.exe` | 启动本地网页后端并自动打开浏览器 |
+| `propel.exe` | 默认入口：启动本地网页后端并自动打开浏览器 |
+| `propel-web.exe` | 与默认入口相同的网页版兼容入口 |
+| `propel-desktop.exe` | 打开原桌面整合程序 |
 
-`propel-web.exe` 默认使用 `http://127.0.0.1:8080`。如果 8080 已被占用，会自动尝试
+`propel.exe` 和 `propel-web.exe` 默认使用 `http://127.0.0.1:8080`。如果 8080 已被占用，会自动尝试
 8081–8099，必要时选择其他系统空闲端口，不需要再手动修改命令行。
 
 > `jpackage` 的 Windows EXE 是安装包，不是可以从任意位置直接运行的单文件绿色程序。这样可以可靠地携带 Java 运行时，并避免误删 `runtime` 或 `app` 目录导致程序无法启动。
@@ -40,8 +41,7 @@ propel-Windows-portable.zip
 SHA256SUMS.txt
 ```
 
-安装包会创建 `propel` 和 `propel-web` 两个入口。免安装包完整解压后，也会同时包含
-`propel.exe` 与 `propel-web.exe`。工作流会先运行 Maven 测试，再生成产物；测试或打包失败时不会上传错误产物。推送形如 `v1.0.0` 的 tag 也会自动触发构建。
+安装包会创建 `propel`、`propel-web` 和 `propel-desktop` 三个入口。免安装包完整解压后也包含这三个入口。工作流会先运行 Maven 测试，并实际启动 `propel.exe` 检查 `/api/health`，确认默认入口确实是网页版后才上传产物。推送形如 `v1.0.0` 的 tag 也会自动触发构建。
 
 ## 在 Windows 电脑本地打包
 
@@ -91,10 +91,11 @@ release\windows\propel-Windows-portable.zip
 
 使用者必须完整解压 ZIP：
 
-- 双击 `propel.exe` 打开桌面版。
-- 双击 `propel-web.exe` 一键打开本地网页版。
+- 双击 `propel.exe` 一键打开本地网页版。
+- `propel-web.exe` 是相同网页版的兼容入口。
+- 双击 `propel-desktop.exe` 打开旧桌面版。
 
-不能只把其中任意一个 EXE 单独复制出来，因为两个启动器都依赖同目录下的 `app` 和 `runtime`。
+不能只把其中任意一个 EXE 单独复制出来，因为三个启动器都依赖同目录下的 `app` 和 `runtime`。
 
 同时生成单文件安装包和绿色版：
 
@@ -105,9 +106,9 @@ release\windows\propel-Windows-portable.zip
 ## 使用说明
 
 1. 双击 `propel-1.0.0.exe` 完成安装。
-2. 双击 `propel-web`，程序会启动本地后端并自动打开默认浏览器。
+2. 双击 `propel`，程序会启动本地后端并自动打开默认浏览器。
 3. 在网页中导入 CSV、TSV 或 Excel 文件，填写预算并导出结果。
-4. 需要原桌面界面时，双击 `propel`。
+4. 需要原桌面界面时，双击 `propel-desktop`。
 5. 如 Windows 显示“未知发布者”，点击 **更多信息** → **仍要运行**。这是未购买代码签名证书时的正常提示。
 
 ## macOS 一键网页版
@@ -135,7 +136,7 @@ release/macos/Propel Web.app
 | `jpackage.exe was not found` | 安装完整 JDK 21，不要只装 JRE；把 `JAVA_HOME` 指向 JDK |
 | `WiX Toolset 3 was not found` | 安装 WiX 3，重新打开 PowerShell 后再打包 |
 | 双击旧 `propel.exe` 没反应 | 不要从旧绿色版文件夹单独复制 EXE；改用新的 `propel-1.0.0.exe` 安装包 |
-| 8080 端口已经被占用 | `propel-web` 会自动选择下一个可用本地端口并打开正确地址 |
+| 8080 端口已经被占用 | `propel` 和 `propel-web` 会自动选择下一个可用本地端口并打开正确地址 |
 | Windows 提示未知发布者 | 当前 EXE 未签名；可继续运行，正式外发时建议购买代码签名证书 |
 | 需要修改版本号 | 运行 `.\scripts\package-windows.ps1 -AppVersion 1.1.0` |
 
@@ -143,9 +144,11 @@ release/macos/Propel Web.app
 
 - 桌面程序入口：`com.autoproject.Main`
 - 本地网页一键入口：`com.autoproject.web.WebLauncherMain`
-- Windows 网页启动器：`propel-web.exe`
+- Windows 默认网页启动器：`propel.exe`
+- Windows 兼容网页启动器：`propel-web.exe`
+- Windows 旧桌面启动器：`propel-desktop.exe`
 - macOS 网页启动器：`Propel Web.app`
-- 打包时固定传入：`--gui`
+- 仅旧桌面启动器固定传入：`--gui`
 - Java 最大堆内存：`4 GB`
 - Supply Matrix 会打包到应用内部，并通过 `$APPDIR` 固定定位
 - Windows 升级 UUID 固定不变，因此未来版本可以覆盖升级

@@ -1,5 +1,5 @@
 # One-time cleanup after a bad jpackage run (nested target\dist\propel\app\dist\...).
-# Close propel.exe first, then run from project root:
+# Close all Propel launchers first, then run from project root:
 #   .\scripts\clean-package-artifacts.ps1
 
 $ErrorActionPreference = "Stop"
@@ -19,13 +19,15 @@ function Remove-TreeForce([string]$Path) {
         Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Continue
     }
     if (Test-Path -LiteralPath $Path) {
-        Write-Warning "Could not fully remove $Path — close propel.exe / Excel, reboot, or delete in Explorer."
+        Write-Warning "Could not fully remove $Path — close all Propel launchers / Excel, reboot, or delete in Explorer."
     }
 }
 
-$runningApp = Get-Process -Name @("propel", "propel-web") -ErrorAction SilentlyContinue
+$runningApp = Get-Process `
+    -Name @("propel", "propel-web", "propel-desktop") `
+    -ErrorAction SilentlyContinue
 if ($runningApp) {
-    throw "propel.exe or propel-web.exe is running. Close it before cleaning package artifacts."
+    throw "A Propel launcher is running. Close it before cleaning package artifacts."
 }
 
 Remove-TreeForce (Join-Path $Root "target\dist")
