@@ -8,6 +8,8 @@
 
 前往 [GitHub Releases 最新版本](https://github.com/SuleynanAuir/viooh-propel-autopilot/releases/latest)，根据操作系统下载：
 
+> 当前仓库为 Private。下载者必须先登录 GitHub，并且拥有本仓库的访问权限；未获授权的用户打开下载链接会显示 404。若要让任何人直接下载，需要由仓库管理员另行把仓库设为 Public，或通过其他渠道分发发行包。
+
 | 操作系统 | 下载文件 | 使用方式 |
 | --- | --- | --- |
 | macOS（Apple Silicon） | [`Propel-Web-macOS-arm64.zip`](https://github.com/SuleynanAuir/viooh-propel-autopilot/releases/latest/download/Propel-Web-macOS-arm64.zip) | 解压后双击 `Propel Web.app` |
