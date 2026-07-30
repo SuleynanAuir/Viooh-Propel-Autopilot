@@ -31,10 +31,21 @@
 3. 双击 `Propel Web.app`。
 4. 程序会启动本地 Java 后端，并自动打开浏览器操作页面。
 
-应用尚未使用 Apple 商业开发者证书签名。首次启动如果被 macOS 阻止：
+应用尚未使用 Apple Developer ID 完成 notarization。从 Chrome/GitHub 下载后，首次启动可能显示“Apple 无法检查其是否包含恶意软件”：
 
-1. 按住 Control 键点击 `Propel Web.app`，选择“打开”。
-2. 仍被阻止时，进入“系统设置 → 隐私与安全性”，点击“仍要打开”。
+1. 在提示窗口点击“完成”。
+2. 打开“系统设置 → 隐私与安全性”。
+3. 向下找到“已阻止使用 Propel Web”，点击“仍要打开”。
+4. 输入 Mac 登录密码，再次确认“打开”。以后启动通常不再提示。
+
+也可以先按住 Control 键点击 `Propel Web.app`，选择“打开”。如果系统仍然只显示阻止提示，可把应用拖入“应用程序”文件夹，然后在终端运行：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Propel Web.app"
+open "/Applications/Propel Web.app"
+```
+
+该命令只应对从本仓库 Release 下载并通过 SHA-256 校验的应用使用。若要从根本上取消所有用户的 Gatekeeper 提示，发行包必须使用付费 Apple Developer ID 证书签名并提交 Apple notarization。
 
 ## Windows 安装版
 
