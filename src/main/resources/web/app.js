@@ -13,10 +13,11 @@ const progressWrap = document.querySelector('#progress-wrap');
 const progressBar = document.querySelector('#progress-bar');
 const progressText = document.querySelector('#progress-text');
 const maxUploadLabel = document.querySelector('#upload-limit');
-const sourceCurrency = document.querySelector('#source-currency');
 const targetCurrency = document.querySelector('#target-currency');
-const exchangeRate = document.querySelector('#exchange-rate');
-const exchangeRateField = document.querySelector('#exchange-rate-field');
+const currencyRateList = document.querySelector('#currency-rate-list');
+const currencyRateRowTemplate = document.querySelector('#currency-rate-row-template');
+const addSourceCurrency = document.querySelector('#add-source-currency');
+const currencyRates = document.querySelector('#currency-rates');
 const outputName = document.querySelector('#output-name');
 const chooseSaveLocation = document.querySelector('#choose-save-location');
 const saveLocationSummary = document.querySelector('#save-location-summary');
@@ -108,16 +109,90 @@ function formatBytes(bytes) {
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
 }
 
-function syncExchangeRateRequirement() {
-  const sameCurrency = sourceCurrency.value && sourceCurrency.value === targetCurrency.value;
-  exchangeRateField.classList.toggle('disabled', sameCurrency);
-  exchangeRate.required = !sameCurrency;
-  exchangeRate.disabled = sameCurrency;
-  if (sameCurrency) {
-    exchangeRate.value = '1';
-  } else if (exchangeRate.value === '1') {
-    exchangeRate.value = '';
+function normalizeCurrencyInput(input) {
+  input.value = input.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+  return input.value;
+}
+
+function currencyRows() {
+  return [...currencyRateList.querySelectorAll('.currency-rate-row')];
+}
+
+function updateCurrencyRemoveButtons() {
+  const rows = currencyRows();
+  for (const row of rows) {
+    row.querySelector('.remove-currency-button').disabled = rows.length === 1;
   }
+}
+
+function syncCurrencyRateRows() {
+  const target = normalizeCurrencyInput(targetCurrency);
+  for (const row of currencyRows()) {
+    const sourceInput = row.querySelector('.source-currency-input');
+    const rateInput = row.querySelector('.exchange-rate-input');
+    const rateField = row.querySelector('.rate-field');
+    const source = normalizeCurrencyInput(sourceInput);
+    const identity = source.length === 3 && target.length === 3 && source === target;
+    rateField.classList.toggle('disabled', identity);
+    rateInput.disabled = identity;
+    rateInput.required = !identity;
+    if (identity) {
+      rateInput.value = '1';
+      rateInput.dataset.identityRate = 'true';
+    } else if (rateInput.dataset.identityRate === 'true') {
+      rateInput.value = '';
+      delete rateInput.dataset.identityRate;
+    }
+    rateField.querySelector('span').textContent =
+      `Rate to ${target.length === 3 ? target : 'target'}${identity ? ' (fixed at 1)' : ' *'}`;
+  }
+}
+
+function addCurrencyRateRow(source = '', rate = '') {
+  const row = currencyRateRowTemplate.content.firstElementChild.cloneNode(true);
+  const sourceInput = row.querySelector('.source-currency-input');
+  const rateInput = row.querySelector('.exchange-rate-input');
+  const removeButton = row.querySelector('.remove-currency-button');
+  sourceInput.value = source;
+  rateInput.value = rate;
+  sourceInput.addEventListener('input', () => {
+    sourceInput.setCustomValidity('');
+    syncCurrencyRateRows();
+  });
+  rateInput.addEventListener('input', () => rateInput.setCustomValidity(''));
+  removeButton.addEventListener('click', () => {
+    row.remove();
+    updateCurrencyRemoveButtons();
+    syncCurrencyRatesField();
+  });
+  currencyRateList.append(row);
+  updateCurrencyRemoveButtons();
+  syncCurrencyRateRows();
+}
+
+function syncCurrencyRatesField() {
+  const seen = new Set();
+  const mappings = [];
+  let valid = true;
+  for (const row of currencyRows()) {
+    const sourceInput = row.querySelector('.source-currency-input');
+    const rateInput = row.querySelector('.exchange-rate-input');
+    const source = normalizeCurrencyInput(sourceInput);
+    sourceInput.setCustomValidity('');
+    rateInput.setCustomValidity('');
+    if (source.length === 3 && seen.has(source)) {
+      sourceInput.setCustomValidity(`Source currency ${source} is listed more than once.`);
+      valid = false;
+      continue;
+    }
+    if (source.length === 3) seen.add(source);
+    const rate = Number(rateInput.value);
+    if (source.length === 3 && Number.isFinite(rate) && rate > 0) {
+      mappings.push(`${source}=${rateInput.value}`);
+    }
+  }
+  currencyRates.value = mappings.join(',');
+  return valid;
 }
 
 function normalizedOutputName() {
@@ -196,8 +271,8 @@ for (const eventName of ['dragleave', 'drop']) {
 }
 dropZone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
 
-sourceCurrency.addEventListener('change', syncExchangeRateRequirement);
-targetCurrency.addEventListener('change', syncExchangeRateRequirement);
+targetCurrency.addEventListener('input', syncCurrencyRateRows);
+addSourceCurrency.addEventListener('click', () => addCurrencyRateRow());
 chooseSaveLocation.addEventListener('click', chooseSaveFile);
 outputName.addEventListener('input', () => {
   if (saveFileHandle && outputName.value.trim() !== saveFileHandle.name) {
@@ -321,13 +396,14 @@ submitButton.addEventListener('click', event => {
 form.addEventListener('submit', event => {
   event.preventDefault();
   fileError.textContent = '';
-  syncExchangeRateRequirement();
+  syncCurrencyRateRows();
+  const currencyMappingsValid = syncCurrencyRatesField();
   if (!exportServiceAvailable) {
     statusTitle.textContent = 'Export service is unavailable';
     statusDetail.textContent = 'Cannot run the original Propel export flow until /api/health is served by the Java backend.';
     return;
   }
-  if (!form.reportValidity()) return;
+  if (!form.reportValidity() || !currencyMappingsValid) return;
   if (selectedFiles.length === 0) {
     fileError.textContent = 'Select at least one frame list file.';
     dropZone.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -348,9 +424,8 @@ form.addEventListener('submit', event => {
   body.delete('inputFiles');
   for (const file of selectedFiles) body.append('inputFiles', file, file.name);
   body.set('outputName', normalizedOutputName());
-  body.set('sourceCurrency', sourceCurrency.value);
-  body.set('targetCurrency', targetCurrency.value);
-  body.set('exchangeRate', sourceCurrency.value === targetCurrency.value ? '1' : exchangeRate.value);
+  body.set('targetCurrency', normalizeCurrencyInput(targetCurrency));
+  body.set('currencyRates', currencyRates.value);
   body.set('fetchPicsFromLinks', 'true');
 
   setBusy(true);
@@ -429,5 +504,5 @@ function responseFileName(header) {
   return simple ? simple[1] : null;
 }
 
-syncExchangeRateRequirement();
+addCurrencyRateRow();
 loadServerCapabilities();

@@ -1,17 +1,18 @@
 # Build a self-contained Windows release.
 #
 # Default output:
-#   release\windows\propel-1.0.0.exe
+#   release\windows\propel-1.1.0.exe
 #
-# The EXE is a Windows installer. It installs both propel.exe (desktop UI) and
-# propel-web.exe (one-click local web UI), plus a private Java runtime.
+# The EXE is a Windows installer. propel.exe starts the same one-click local web UI
+# as the macOS app. propel-web.exe is retained as a compatibility alias, and
+# propel-desktop.exe opens the legacy desktop UI.
 
 [CmdletBinding()]
 param(
     [ValidateSet("Installer", "Portable", "All")]
     [string]$PackageType = "Installer",
 
-    [string]$AppVersion = "1.0.0",
+    [string]$AppVersion = "1.1.0",
 
     [switch]$SkipTests
 )
@@ -24,6 +25,7 @@ Set-Location $Root
 
 $AppName = "propel"
 $WebLauncherName = "propel-web"
+$DesktopLauncherName = "propel-desktop"
 $JarName = "Auto_project-1.0-SNAPSHOT.jar"
 $ReleaseRoot = Join-Path $Root "release\windows"
 $StageDir = Join-Path $Root "target\jpackage-input"
@@ -154,9 +156,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "jpackage.exe failed with exit code $LASTEXITCODE."
 }
 
-$runningApp = Get-Process -Name @($AppName, $WebLauncherName) -ErrorAction SilentlyContinue
+$runningApp = Get-Process `
+    -Name @($AppName, $WebLauncherName, $DesktopLauncherName) `
+    -ErrorAction SilentlyContinue
 if ($runningApp) {
-    throw "propel.exe or propel-web.exe is running. Close it before packaging, then run this script again."
+    throw "A Propel launcher is running. Close it before packaging, then run this script again."
 }
 
 Write-Host "==> Cleaning packaging output" -ForegroundColor Cyan
@@ -204,20 +208,30 @@ $WebLauncherConfig = Join-Path $TempRoot "propel-web.properties"
     "win-menu=true"
 ) | Set-Content -LiteralPath $WebLauncherConfig -Encoding ascii
 
+$DesktopLauncherConfig = Join-Path $TempRoot "propel-desktop.properties"
+@(
+    "main-jar=$JarName"
+    "main-class=com.autoproject.Main"
+    "description=Open the legacy Propel desktop application"
+    "arguments=--gui"
+    "win-shortcut=true"
+    "win-menu=true"
+) | Set-Content -LiteralPath $DesktopLauncherConfig -Encoding ascii
+
 $jpackageCommon = @(
     "--input", $StageDir,
     "--main-jar", $JarName,
-    "--main-class", "com.autoproject.Main",
+    "--main-class", "com.autoproject.web.WebLauncherMain",
     "--name", $AppName,
     "--app-version", $AppVersion,
-    "--description", "VIOOH CSV merge and proposal Excel export",
+    "--description", "Open the Propel local web application",
     "--vendor", "VIOOH",
     "--copyright", "VIOOH",
     "--java-options", "-Dfile.encoding=UTF-8",
     "--java-options", "-Xmx4g",
     "--java-options", '-Dpropel.supplyMatrixPath=$APPDIR/feishu/supply_matrix.xlsx',
     "--add-launcher", "$WebLauncherName=$WebLauncherConfig",
-    "--arguments", "--gui"
+    "--add-launcher", "$DesktopLauncherName=$DesktopLauncherConfig"
 )
 
 if ($PackageType -in @("Installer", "All")) {
@@ -268,12 +282,16 @@ if ($PackageType -in @("Portable", "All")) {
     $appImage = Join-Path $portableDest $AppName
     $portableExe = Join-Path $appImage "$AppName.exe"
     $portableWebExe = Join-Path $appImage "$WebLauncherName.exe"
+    $portableDesktopExe = Join-Path $appImage "$DesktopLauncherName.exe"
     $portableSupplyMatrix = Join-Path $appImage "app\feishu\supply_matrix.xlsx"
     if (-not (Test-Path -LiteralPath $portableExe)) {
         throw "Portable launcher was not created: $portableExe"
     }
     if (-not (Test-Path -LiteralPath $portableWebExe)) {
         throw "Portable web launcher was not created: $portableWebExe"
+    }
+    if (-not (Test-Path -LiteralPath $portableDesktopExe)) {
+        throw "Portable desktop launcher was not created: $portableDesktopExe"
     }
     if (-not (Test-Path -LiteralPath $portableSupplyMatrix)) {
         throw "Portable PICS supply matrix was not packaged: $portableSupplyMatrix"
@@ -282,7 +300,9 @@ if ($PackageType -in @("Portable", "All")) {
     $zipPath = Join-Path $ReleaseRoot "$AppName-Windows-portable.zip"
     Compress-Archive -Path $appImage -DestinationPath $zipPath -CompressionLevel Optimal
     Write-Host "Portable ZIP ready: $zipPath" -ForegroundColor Green
-    Write-Host "One-click web launcher: $portableWebExe" -ForegroundColor Green
+    Write-Host "Default one-click web launcher: $portableExe" -ForegroundColor Green
+    Write-Host "Compatibility web launcher: $portableWebExe" -ForegroundColor Green
+    Write-Host "Legacy desktop launcher: $portableDesktopExe" -ForegroundColor Green
 }
 
 if (Test-Path -LiteralPath $TempRoot) {

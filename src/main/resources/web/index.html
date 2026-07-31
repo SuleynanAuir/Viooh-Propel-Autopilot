@@ -91,48 +91,56 @@
 
         <details class="option-panel" open>
           <summary>
-            <span><strong>Currency conversion</strong><small>Select both currencies, even when they are the same.</small></span>
+            <span><strong>Currency conversion</strong><small>Map every source currency to one package currency.</small></span>
             <span class="summary-action">Configure</span>
           </summary>
-          <div class="option-content currency-grid">
-            <label class="field">
-              <span>Original currency <b aria-hidden="true">*</b></span>
-              <select id="source-currency" name="sourceCurrency" required>
-                <option value="">Select</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-                <option value="AED">AED</option>
-                <option value="AUD">AUD</option>
-                <option value="CAD">CAD</option>
-                <option value="CHF">CHF</option>
-                <option value="CNY">CNY</option>
-                <option value="HKD">HKD</option>
-                <option value="JPY">JPY</option>
-                <option value="SGD">SGD</option>
-              </select>
-            </label>
-            <label class="field">
+          <div class="option-content currency-conversion">
+            <label class="field currency-target">
               <span>Target currency <b aria-hidden="true">*</b></span>
-              <select id="target-currency" name="targetCurrency" required>
-                <option value="">Select</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-                <option value="AED">AED</option>
-                <option value="AUD">AUD</option>
-                <option value="CAD">CAD</option>
-                <option value="CHF">CHF</option>
-                <option value="CNY">CNY</option>
-                <option value="HKD">HKD</option>
-                <option value="JPY">JPY</option>
-                <option value="SGD">SGD</option>
-              </select>
+              <input id="target-currency" name="targetCurrency" type="text" maxlength="3"
+                     pattern="[A-Za-z]{3}" list="currency-code-options" placeholder="USD"
+                     autocomplete="off" required>
+              <small>All Proposal CPM and package calculations use this currency.</small>
             </label>
-            <label id="exchange-rate-field" class="field full">
-              <span>Exchange rate <b aria-hidden="true">*</b></span>
-              <input id="exchange-rate" name="exchangeRate" type="number" min="0" step="0.0001" placeholder="1 original currency unit in target currency">
-            </label>
+            <datalist id="currency-code-options">
+              <option value="USD"></option>
+              <option value="EUR"></option>
+              <option value="GBP"></option>
+              <option value="AED"></option>
+              <option value="AUD"></option>
+              <option value="CAD"></option>
+              <option value="CHF"></option>
+              <option value="CNY"></option>
+              <option value="HKD"></option>
+              <option value="JPY"></option>
+              <option value="SGD"></option>
+            </datalist>
+            <div class="currency-map-heading">
+              <div>
+                <strong>Source currencies</strong>
+                <small>Add every currency present in the uploaded frame files.</small>
+              </div>
+              <button id="add-source-currency" class="secondary-button" type="button">Add currency</button>
+            </div>
+            <div id="currency-rate-list" class="currency-rate-list"></div>
+            <input id="currency-rates" name="currencyRates" type="hidden">
+            <small class="currency-example">Rate format: 1 source-currency unit = rate units of the target currency. Example for a USD package: EUR 1.08, USD 1, SGD 0.74.</small>
+            <template id="currency-rate-row-template">
+              <div class="currency-rate-row">
+                <label class="field">
+                  <span>Source currency <b aria-hidden="true">*</b></span>
+                  <input class="source-currency-input" type="text" maxlength="3"
+                         pattern="[A-Za-z]{3}" list="currency-code-options"
+                         placeholder="EUR" autocomplete="off" required>
+                </label>
+                <label class="field rate-field">
+                  <span>Rate to target <b aria-hidden="true">*</b></span>
+                  <input class="exchange-rate-input" type="number" min="0.00000001"
+                         step="any" placeholder="Example: 1.08" required>
+                </label>
+                <button class="remove-currency-button" type="button" aria-label="Remove source currency">×</button>
+              </div>
+            </template>
           </div>
         </details>
 

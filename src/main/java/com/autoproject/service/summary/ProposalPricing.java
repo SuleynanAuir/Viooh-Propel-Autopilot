@@ -99,10 +99,28 @@ public final class ProposalPricing {
         if (floorCpm == null || brief == null) {
             return null;
         }
-        String sourceCurrency = normalizeCurrency(brief.getSourceCurrency());
         String targetCurrency = normalizeCurrency(brief.getTargetCurrency());
+        String normalizedRowCurrency = normalizeCurrency(rowCurrency);
+        Map<String, Double> ratesBySource = brief.getCurrencyExchangeRateBySource();
+        if (targetCurrency != null && ratesBySource != null && !ratesBySource.isEmpty()) {
+            if (normalizedRowCurrency == null) {
+                return null;
+            }
+            if (targetCurrency.equals(normalizedRowCurrency)) {
+                return floorCpm;
+            }
+            Double rate = ratesBySource.get(normalizedRowCurrency);
+            if (rate == null || rate <= 0) {
+                return null;
+            }
+            return BigDecimal.valueOf(floorCpm * rate)
+                    .setScale(4, RoundingMode.HALF_UP)
+                    .doubleValue();
+        }
+
+        // Backwards compatibility for previously saved single-currency briefs.
+        String sourceCurrency = normalizeCurrency(brief.getSourceCurrency());
         if (sourceCurrency != null && targetCurrency != null) {
-            String normalizedRowCurrency = normalizeCurrency(rowCurrency);
             if (normalizedRowCurrency != null && !sourceCurrency.equals(normalizedRowCurrency)) {
                 return null;
             }

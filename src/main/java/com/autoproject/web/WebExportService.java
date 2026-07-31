@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 final class WebExportService {
     private static final Set<String> INPUT_EXTENSIONS = Set.of("csv", "tsv", "xlsx", "xls");
@@ -41,9 +42,8 @@ final class WebExportService {
         int budget = positiveInteger(form.first("budget"), "Campaign budget");
         int campaignDays = optionalPositiveInteger(form.first("campaignDays"), 7, "Campaign days");
         String location = trimToDefault(form.first("location"), "");
-        String sourceCurrency = requiredCurrency(form.first("sourceCurrency"), "Original currency");
         String targetCurrency = requiredCurrency(form.first("targetCurrency"), "Target currency");
-        double exchangeRate = exchangeRate(sourceCurrency, targetCurrency, form.first("exchangeRate"));
+        Map<String, Double> exchangeRatesBySource = currencyRates(form, targetCurrency);
 
         if (!form.files("picsFiles").isEmpty()) {
             throw new IllegalArgumentException("PICS images are resolved from feishu/supply_matrix.xlsx. Local PICS uploads are not supported.");
@@ -56,12 +56,15 @@ final class WebExportService {
                 allowRemoteImages && booleanValue(form.first("fetchPicsFromLinks"));
 
         Brief brief = new Brief(location, budget, campaignDays, true, null, Map.of());
-        brief.setSourceCurrency(sourceCurrency);
         brief.setTargetCurrency(targetCurrency);
-        brief.setCurrencyExchangeRate(exchangeRate);
+        brief.setCurrencyExchangeRateBySource(exchangeRatesBySource);
         brief.setPicsFetchFromLinks(fetchPicsFromLinks);
 
         List<FrameData> merged = new DataMerger().merge(inputPaths.toArray(String[]::new));
+        validateCurrencyCoverage(
+                ExcelGenerator.filterFramesForExport(merged),
+                exchangeRatesBySource,
+                targetCurrency);
         applyPhotographyBudget(brief, merged, form.first("photographyMode"), form.first("photographyBudget"));
 
         String downloadName = safeOutputName(form.first("outputName"));
@@ -131,9 +134,54 @@ final class WebExportService {
             if (!Double.isFinite(rate) || rate <= 0) {
                 throw new IllegalArgumentException("Exchange rate must be greater than 0: " + item);
             }
-            rates.put(currency, rate);
+            if (rates.putIfAbsent(currency, rate) != null) {
+                throw new IllegalArgumentException("Duplicate source currency: " + currency);
+            }
         }
         return rates;
+    }
+
+    private static Map<String, Double> currencyRates(
+            MultipartFormData.Form form,
+            String targetCurrency
+    ) {
+        Map<String, Double> rates = parseRates(form.first("currencyRates"));
+
+        // Accept the original single-currency form fields so older cached pages and API clients
+        // continue to work after the multi-currency rollout.
+        if (rates.isEmpty() && form.first("sourceCurrency") != null) {
+            String sourceCurrency = requiredCurrency(form.first("sourceCurrency"), "Original currency");
+            rates.put(sourceCurrency, exchangeRate(sourceCurrency, targetCurrency, form.first("exchangeRate")));
+        }
+
+        Double explicitTargetRate = rates.get(targetCurrency);
+        if (explicitTargetRate != null && Math.abs(explicitTargetRate - 1d) > 1e-9d) {
+            throw new IllegalArgumentException(
+                    "The target currency " + targetCurrency + " must use an exchange rate of 1");
+        }
+        rates.put(targetCurrency, 1d);
+        return rates;
+    }
+
+    private static void validateCurrencyCoverage(
+            List<FrameData> frames,
+            Map<String, Double> ratesBySource,
+            String targetCurrency
+    ) {
+        Set<String> missing = new TreeSet<>();
+        for (FrameData frame : frames) {
+            String currency = ProposalPricing.normalizeCurrency(frame.getMediaOwnerCurrency());
+            if (currency != null
+                    && !targetCurrency.equals(currency)
+                    && !ratesBySource.containsKey(currency)) {
+                missing.add(currency);
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Missing exchange rate to " + targetCurrency + " for source currencies: "
+                            + String.join(", ", missing));
+        }
     }
 
     private static String requiredCurrency(String raw, String label) {

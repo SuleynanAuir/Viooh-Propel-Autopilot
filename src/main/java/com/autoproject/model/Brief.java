@@ -16,6 +16,8 @@ public class Brief {
     private String sourceCurrency;
     private String targetCurrency;
     private Double currencyExchangeRate;
+    /** Generic conversion rates expressed as 1 source-currency unit in the selected target currency. */
+    private Map<String, Double> currencyExchangeRateBySource = new LinkedHashMap<>();
     private String localPicsRootPath;
     /** When false, PICS skips remote supply-matrix image downloads but still performs local matching. */
     private boolean picsFetchFromLinks = true;
@@ -137,6 +139,24 @@ public class Brief {
 
     public void setCurrencyExchangeRate(Double currencyExchangeRate) {
         this.currencyExchangeRate = currencyExchangeRate;
+    }
+
+    public Map<String, Double> getCurrencyExchangeRateBySource() {
+        return Collections.unmodifiableMap(currencyExchangeRateBySource);
+    }
+
+    public void setCurrencyExchangeRateBySource(Map<String, Double> rates) {
+        this.currencyExchangeRateBySource.clear();
+        if (rates == null) {
+            return;
+        }
+        for (Map.Entry<String, Double> entry : rates.entrySet()) {
+            String currency = normalizeCurrency(entry.getKey());
+            Double rate = entry.getValue();
+            if (currency != null && rate != null) {
+                this.currencyExchangeRateBySource.put(currency, rate);
+            }
+        }
     }
 
     public Map<String, Double> getUsdExchangeRateByCurrency() {

@@ -13,13 +13,13 @@
 | 操作系统 | 下载文件 | 使用方式 |
 | --- | --- | --- |
 | macOS（Apple Silicon） | [`Propel-Web-macOS-arm64.zip`](https://github.com/SuleynanAuir/viooh-propel-autopilot/releases/latest/download/Propel-Web-macOS-arm64.zip) | 解压后双击 `Propel Web.app` |
-| Windows 10/11 x64 | [`propel-1.0.0.exe`](https://github.com/SuleynanAuir/viooh-propel-autopilot/releases/latest/download/propel-1.0.0.exe) | 运行安装程序，安装后从开始菜单启动 |
+| Windows 10/11 x64 | [`propel-1.1.0.exe`](https://github.com/SuleynanAuir/viooh-propel-autopilot/releases/latest/download/propel-1.1.0.exe) | 运行安装程序，安装后从开始菜单启动 |
 | Windows 10/11 x64 免安装版 | [`propel-Windows-portable.zip`](https://github.com/SuleynanAuir/viooh-propel-autopilot/releases/latest/download/propel-Windows-portable.zip) | 完整解压后双击程序 |
 
 如果不确定：
 
 - Mac 用户下载 `Propel-Web-macOS-arm64.zip`。
-- Windows 用户推荐下载 `propel-1.0.0.exe`。
+- Windows 用户推荐下载 `propel-1.1.0.exe`。
 - 不希望执行安装向导的 Windows 用户下载便携版 ZIP。
 
 ## macOS 安装与启动
@@ -49,11 +49,12 @@ open "/Applications/Propel Web.app"
 
 ## Windows 安装版
 
-1. 下载 `propel-1.0.0.exe`。
+1. 下载 `propel-1.1.0.exe`。
 2. 双击并完成安装向导。
-3. 安装后可使用两个入口：
-   - `propel-web.exe`：启动本地网页并自动打开浏览器。
-   - `propel.exe`：启动原桌面界面。
+3. 安装后双击 `propel.exe`：它会启动与 macOS 版本相同的本地 Java 后端，并自动打开浏览器页面。
+4. 另外保留两个兼容/备用入口：
+   - `propel-web.exe`：与 `propel.exe` 相同的网页版兼容入口。
+   - `propel-desktop.exe`：需要旧界面时使用的原桌面入口。
 
 安装包已经包含专用 Java 运行时，不需要另外安装 Java。
 
@@ -64,9 +65,21 @@ open "/Applications/Propel Web.app"
 1. 下载 `propel-Windows-portable.zip`。
 2. 右键选择“全部解压”，不要直接在 ZIP 压缩包内运行。
 3. 打开解压后的 `propel` 文件夹。
-4. 双击 `propel-web.exe` 或 `propel.exe`。
+4. 双击 `propel.exe`，即可启动与 macOS 相同的本地网页版。
 
-便携版里的 EXE 依赖同目录下的 `app` 和 `runtime` 文件夹。不能只复制单个 EXE，也不要删除这些目录。
+`propel-web.exe` 是相同网页版的兼容入口；`propel-desktop.exe` 是旧桌面界面。便携版里的 EXE 依赖同目录下的 `app` 和 `runtime` 文件夹，不能只复制单个 EXE，也不要删除这些目录。
+
+## 多币种 package 换算
+
+网页版可将多个 source currencies 映射到同一个 target currency。选择一个目标币种后，为 Frame 文件中出现的每个原币种新增一行汇率：
+
+```text
+EUR -> USD: 1.08
+USD -> USD: 1
+SGD -> USD: 0.74
+```
+
+汇率含义为“1 单位原币 = 多少单位目标币”。Proposal 中的目标 CPM、Media Budget 和最终 package 均按同一个 target currency 计算。若上传数据中存在未配置的币种，程序会列出缺失币种并停止导出，避免静默少算。
 
 ## PICS 与飞书图片
 
@@ -83,6 +96,16 @@ Supply Matrix 已包含在发行包内。受保护的飞书文件夹需要以下
 - 首次启动时，Windows 防火墙可能询问是否允许 Java/Propel 通信。仅需允许本机需要的网络访问。
 - `.app`、安装版和便携版均已包含运行环境，但飞书等外部受保护资源仍需要有效访问凭证。
 - 可通过 [`SHA256SUMS.txt`](https://github.com/SuleynanAuir/viooh-propel-autopilot/releases/latest/download/SHA256SUMS.txt) 校验下载文件完整性。
+
+## 版本更新
+
+当前 `.app`、Windows 安装版和便携版没有内置自动更新功能。已经下载的程序不会自动获得后续代码改动：
+
+- macOS：下载新版 ZIP，并用新的 `Propel Web.app` 替换旧版本。
+- Windows 安装版：下载并运行新版安装程序；固定的升级标识会用于覆盖升级。
+- Windows 便携版：下载新版 ZIP，完整解压并替换旧文件夹。
+
+不需要为每次内部小改动都重新下载；只有项目发布了你需要的新功能或修复版本时才需要更新。可在 GitHub Release 中查看版本号和变更说明。
 
 ## 开发者文档
 

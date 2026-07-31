@@ -229,6 +229,43 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .option-content { padding: 20px 2px 4px; display: grid; gap: 18px; }
 .option-content.stack { gap: 12px; }
 
+.currency-conversion { gap: 15px; }
+.currency-target { max-width: 260px; }
+.currency-map-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.currency-map-heading > div { display: flex; flex-direction: column; gap: 4px; }
+.currency-map-heading strong { font-size: 12px; }
+.currency-map-heading small,
+.currency-example { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.currency-rate-list { display: grid; gap: 10px; }
+.currency-rate-row {
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(110px, .8fr) minmax(150px, 1.2fr) 30px;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid #d6dfdc;
+  border-radius: 13px;
+  background: #fafcfb;
+}
+.remove-currency-button {
+  width: 30px;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+}
+.remove-currency-button:hover { color: var(--danger); background: #fff0ee; }
+.remove-currency-button:disabled { visibility: hidden; }
+
 .info-box {
   padding: 13px 14px;
   display: flex;
@@ -327,10 +364,19 @@ footer { width: min(1140px, calc(100% - 36px)); margin: 0 auto; padding: 22px 0 
   .card-heading { flex-direction: column; }
   .field-grid { grid-template-columns: 1fr; }
   .field.full { grid-column: auto; }
+  .currency-target { max-width: none; }
+  .currency-map-heading { align-items: flex-start; flex-direction: column; }
+  .currency-rate-row { grid-template-columns: 1fr 1fr 30px; }
   .drop-zone { min-height: 300px; }
   .segmented { grid-template-columns: 1fr; }
   .submit-panel { grid-template-columns: 1fr; }
   #submit-button { width: 100%; }
+}
+
+@media (max-width: 430px) {
+  .currency-rate-row { grid-template-columns: 1fr 30px; }
+  .currency-rate-row .rate-field { grid-column: 1; }
+  .currency-rate-row .remove-currency-button { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 }
 
 @media (prefers-reduced-motion: reduce) {

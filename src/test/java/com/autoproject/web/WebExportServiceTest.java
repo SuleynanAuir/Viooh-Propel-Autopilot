@@ -12,9 +12,12 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WebExportServiceTest {
@@ -67,6 +70,80 @@ class WebExportServiceTest {
         assertTrue(Files.isRegularFile(taskRoot.resolve("meta").resolve("image_mapping.json")));
     }
 
+    @Test
+    void convertsEveryConfiguredSourceCurrencyAndCalculatesPackageInTargetCurrency() throws Exception {
+        Path taskRoot = tempDir.resolve("multi-currency-task");
+        Files.createDirectories(taskRoot);
+        Path supplyMatrix = createSupplyMatrix();
+        String csv = String.join("\n",
+                "MARKET,ASSETUUID,ADDRESS_COUNTRY,ADDRESS_ISO3_COUNTRY_CODE,"
+                        + "VENUE_TAXONOMY_VALUE,IMPRESSIONS,FLOORCPM,MEDIAOWNERCURRENCY,VIOOHSELECTOPTIN",
+                "EUR Market,asset-eur,France,FRA,outdoor.billboards,100000,5,EUR,Yes",
+                "USD Market,asset-usd,United States,USA,outdoor.billboards,100000,5,USD,Yes",
+                "SGD Market,asset-sgd,Singapore,SGP,outdoor.billboards,100000,5,SGD,Yes");
+        MultipartFormData.Form form = parseMultiCurrencyForm(
+                taskRoot,
+                csv,
+                "USD",
+                "EUR=1.08,USD=1,SGD=0.74");
+
+        String oldSupplyMatrixPath = System.getProperty("propel.supplyMatrixPath");
+        WebExportService.ExportResult result;
+        try {
+            System.setProperty("propel.supplyMatrixPath", supplyMatrix.toString());
+            result = new WebExportService(false).export(form, taskRoot);
+        } finally {
+            restoreProperty("propel.supplyMatrixPath", oldSupplyMatrixPath);
+        }
+
+        try (InputStream in = Files.newInputStream(result.path());
+             XSSFWorkbook workbook = new XSSFWorkbook(in)) {
+            Sheet proposal = workbook.getSheet("Proposal");
+            assertNotNull(proposal);
+            assertEquals("Floor price 2026 CPM (USD)",
+                    proposal.getRow(0).getCell(8).getStringCellValue());
+            assertEquals("Media Budget (USD)",
+                    proposal.getRow(0).getCell(17).getStringCellValue());
+
+            Map<String, Double> convertedCpmByCurrency = new LinkedHashMap<>();
+            for (int rowIndex = 1; rowIndex <= 3; rowIndex++) {
+                var row = proposal.getRow(rowIndex);
+                convertedCpmByCurrency.put(
+                        row.getCell(7).getStringCellValue(),
+                        row.getCell(8).getNumericCellValue());
+                assertTrue(row.getCell(17).getCellFormula().contains("I" + (rowIndex + 1)),
+                        "package budget must reference the target-currency CPM column");
+            }
+            // VIOOH Select adds 20% before each source-specific exchange rate is applied.
+            assertEquals(6.48d, convertedCpmByCurrency.get("EUR"), 0.0001d);
+            assertEquals(6d, convertedCpmByCurrency.get("USD"), 0.0001d);
+            assertEquals(4.44d, convertedCpmByCurrency.get("SGD"), 0.0001d);
+        }
+    }
+
+    @Test
+    void rejectsAFrameCurrencyThatHasNoTargetRate() throws Exception {
+        Path taskRoot = tempDir.resolve("missing-rate-task");
+        Files.createDirectories(taskRoot);
+        String csv = String.join("\n",
+                "MARKET,ASSETUUID,ADDRESS_ISO3_COUNTRY_CODE,"
+                        + "VENUE_TAXONOMY_VALUE,IMPRESSIONS,FLOORCPM,MEDIAOWNERCURRENCY,VIOOHSELECTOPTIN",
+                "EUR Market,asset-eur,FRA,outdoor.billboards,1000,5,EUR,Yes",
+                "SGD Market,asset-sgd,SGP,outdoor.billboards,1000,5,SGD,Yes");
+        MultipartFormData.Form form = parseMultiCurrencyForm(
+                taskRoot,
+                csv,
+                "USD",
+                "EUR=1.08,USD=1");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> new WebExportService(false).export(form, taskRoot));
+
+        assertTrue(error.getMessage().contains("Missing exchange rate to USD"));
+        assertTrue(error.getMessage().contains("SGD"));
+    }
+
     private Path createSupplyMatrix() throws Exception {
         Path matrix = tempDir.resolve("supply-matrix.xlsx");
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
@@ -101,6 +178,32 @@ class WebExportServiceTest {
         writeField(body, boundary, "fetchPicsFromLinks", "true");
         writeField(body, boundary, "outputName", "web-latest-pics.xlsx");
         writeFile(body, boundary, "inputFiles", "web-test.csv", "text/csv", csv);
+        body.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        byte[] request = body.toByteArray();
+        return MultipartFormData.parse(
+                new ByteArrayInputStream(request),
+                "multipart/form-data; boundary=" + boundary,
+                request.length + 1024L,
+                taskRoot);
+    }
+
+    private static MultipartFormData.Form parseMultiCurrencyForm(
+            Path taskRoot,
+            String csv,
+            String targetCurrency,
+            String currencyRates
+    ) throws Exception {
+        String boundary = "propel-multi-currency-boundary";
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        writeField(body, boundary, "budget", "10000");
+        writeField(body, boundary, "campaignDays", "7");
+        writeField(body, boundary, "location", "");
+        writeField(body, boundary, "targetCurrency", targetCurrency);
+        writeField(body, boundary, "currencyRates", currencyRates);
+        writeField(body, boundary, "photographyMode", "none");
+        writeField(body, boundary, "fetchPicsFromLinks", "false");
+        writeField(body, boundary, "outputName", "multi-currency.xlsx");
+        writeFile(body, boundary, "inputFiles", "multi-currency.csv", "text/csv", csv);
         body.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
         byte[] request = body.toByteArray();
         return MultipartFormData.parse(
