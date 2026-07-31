@@ -13,6 +13,7 @@ JAR_NAME="Auto_project-1.0-SNAPSHOT.jar"
 STAGE_DIR="$PROJECT_ROOT/target/jpackage-web-input"
 RELEASE_DIR="$PROJECT_ROOT/release/macos"
 APP_PATH="$RELEASE_DIR/Propel Web.app"
+ARCHIVE_PATH="$RELEASE_DIR/Propel-Web-macOS-arm64.zip"
 SUPPLY_MATRIX="$PROJECT_ROOT/feishu/supply_matrix.xlsx"
 PACKAGE_DIR="$(mktemp -d /private/tmp/propel-web-jpackage.XXXXXX)"
 
@@ -90,15 +91,19 @@ xattr -cr "$STAGE_DIR" "$RELEASE_DIR" 2>/dev/null || true
   --java-options "-Xmx4g" \
   --java-options '-Dpropel.supplyMatrixPath=$APPDIR/feishu/supply_matrix.xlsx'
 
-mv "$PACKAGE_DIR/Propel Web.app" "$APP_PATH"
+BUILT_APP="$PACKAGE_DIR/Propel Web.app"
 
-# Finder can attach com.apple.FinderInfo while the app is moved into a Desktop
-# workspace. Clear it from the completed bundle, then refresh and verify the
-# ad-hoc signature so Gatekeeper does not reject the downloaded archive as
-# containing invalid attached data.
-xattr -cr "$APP_PATH"
-codesign --force --deep --sign - "$APP_PATH"
-codesign --verify --deep --strict "$APP_PATH"
+# Finder can immediately attach com.apple.FinderInfo to an .app inside a visible
+# Desktop folder. Finish signing and create the distributable ZIP while the app
+# is still in the private temporary directory, before Finder can mutate it.
+xattr -cr "$BUILT_APP"
+xattr -d com.apple.FinderInfo "$BUILT_APP" 2>/dev/null || true
+codesign --force --deep --sign - "$BUILT_APP"
+codesign --verify --deep --strict "$BUILT_APP"
+rm -f "$ARCHIVE_PATH"
+ditto -c -k --sequesterRsrc --keepParent "$BUILT_APP" "$ARCHIVE_PATH"
+
+mv "$BUILT_APP" "$APP_PATH"
 
 if [[ ! -x "$APP_PATH/Contents/MacOS/Propel Web" ]]; then
   echo "macOS launcher was not created: $APP_PATH" >&2
@@ -112,4 +117,5 @@ fi
 echo
 echo "Propel Web is ready:"
 echo "  $APP_PATH"
+echo "  $ARCHIVE_PATH"
 echo "Double-click the app to start the local server and open the browser."
