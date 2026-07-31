@@ -92,6 +92,14 @@ xattr -cr "$STAGE_DIR" "$RELEASE_DIR" 2>/dev/null || true
 
 mv "$PACKAGE_DIR/Propel Web.app" "$APP_PATH"
 
+# Finder can attach com.apple.FinderInfo while the app is moved into a Desktop
+# workspace. Clear it from the completed bundle, then refresh and verify the
+# ad-hoc signature so Gatekeeper does not reject the downloaded archive as
+# containing invalid attached data.
+xattr -cr "$APP_PATH"
+codesign --force --deep --sign - "$APP_PATH"
+codesign --verify --deep --strict "$APP_PATH"
+
 if [[ ! -x "$APP_PATH/Contents/MacOS/Propel Web" ]]; then
   echo "macOS launcher was not created: $APP_PATH" >&2
   exit 1
