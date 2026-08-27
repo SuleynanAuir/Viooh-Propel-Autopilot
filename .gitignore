@@ -13,13 +13,10 @@ npm-debug.log*
 /dist/
 /dist 2/
 /release/
-/propel-*.zip
-/merged_output.xlsx
 
-# Local input data (test fixtures under src/test/resources remain tracked)
-/Frames-details.csv
-/VS CPM-JCD at-Frames.csv
-/all frames-JCD at.csv
+# Local working data (test fixtures under src/test/resources remain tracked)
+/data/inputs/
+/data/outputs/
 
 # Local runtime logs and Office lock files
 /audit_log.txt

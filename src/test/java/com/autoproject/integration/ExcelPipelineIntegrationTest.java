@@ -29,7 +29,8 @@ class ExcelPipelineIntegrationTest {
     @Test
     void shouldMergeFourProvidedFilesAndGenerateFilteredSheet() throws Exception {
         List<Path> inputs = resolveInputPaths();
-        Path output = Path.of("merged_output.xlsx");
+        Path output = Files.createTempDirectory("excel-pipeline-output")
+                .resolve("merged_output.xlsx");
 
         DataMerger merger = new DataMerger();
         List<FrameData> merged = merger.merge(inputs.stream().map(Path::toString).toArray(String[]::new));

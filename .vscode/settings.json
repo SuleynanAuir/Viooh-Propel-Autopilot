@@ -14,7 +14,7 @@
         "**/dist 2": true,
         "**/*.zip": true,
         "**/*.dmg": true,
-        "Frames-details.csv": true
+        "data/inputs/**": true
     },
     "java.import.exclusions": [
         "**/node_modules/**",

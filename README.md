@@ -129,6 +129,6 @@ Supply Matrix 已包含在发行包内。受保护的飞书文件夹需要以下
 
 ## 开发者文档
 
-- [程序打包与分发说明](DISTRIBUTION.md)
+- [程序打包与分发说明](docs/DISTRIBUTION.md)
 - Windows EXE 构建脚本：`scripts/package-windows.ps1`
 - macOS App 构建脚本：`scripts/package-macos-web.sh`
